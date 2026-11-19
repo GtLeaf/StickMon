@@ -194,6 +194,7 @@ class Room:
         approach = [(x + k * dx, y + k * dy) for k in (1, 2)]
         assert not set(approach) & (self.walls | self.cliffs | self.water | self.stairs)
         self.portals.append(dict(edge=edge, visual_anchor=point,
+                                 trigger=approach[0] if edge == 'BOTTOM' else point,
                                  approach=approach, module=module))
 
     def path(self, level, name, controls):
@@ -296,7 +297,7 @@ def generate(seed, family=None):
     for point, edge in (((entrance, 11), 'BOTTOM'), ((0, low), 'LEFT'),
                         ((0, high), 'LEFT'), ((15, high), 'RIGHT')):
         a.portal(point, edge)
-    a.path(0, 'entrance-to-B', [(entrance, 11), (entrance, low), (0, low)])
+    a.path(0, 'entrance-to-B', [(entrance, 10), (entrance, low), (0, low)])
     a.path(1, 'B-to-C-over-bridge', [(0, high), (15, high)])
 
     for room, prefix, salt in ((b, 'b', 0xB001), (c, 'c', 0xC001)):
@@ -324,7 +325,7 @@ def generate(seed, family=None):
                                (c_stair, 2), (c_stair, high)])
     c.path('stairs', 'descend', [(c_stair, high), (c_stair, bottom)])
     c.path(0, 'lower-exit', [(c_stair, bottom), (c_stair, low),
-                            (spec['c_exit'], low), (spec['c_exit'], 11)])
+                            (spec['c_exit'], low), (spec['c_exit'], 10)])
     branch_x = c_stair - 1 - ((seed >> 5) & 1)
     branch_end_y = 10 if (seed >> 6) & 1 else low
     c.path(0, 'lower-branch', [(c_stair, low), (branch_x, low), (branch_x, branch_end_y)])
@@ -345,7 +346,7 @@ def validate(data):
     totals = dict(route_samples=0, portals=0, waterfalls=0)
     for key, room in data['rooms'].items():
         cells = lambda name: set(map(tuple, room[name]))
-        ports = {tuple(p['visual_anchor']) for p in room['portals']}
+        ports = {tuple(p['trigger']) for p in room['portals']}
         walls, water, cliffs, stairs, decor = [cells(k) for k in
                                                ('walls', 'water', 'cliffs', 'stairs', 'decor')]
         blocked = (walls - ports) | water | cliffs | decor
@@ -384,7 +385,7 @@ def validate(data):
             totals['portals'] += 1
         dry = rect(0, 0, 15, 11) - blocked
         if key == 'A':
-            seen = flood(dry, (spec['entrance'], 11))
+            seen = flood(dry, (spec['entrance'], 10))
             assert (0, 9) in seen
             assert not seen & bridge and (0, spec['bridge']) not in seen
             for y in range(2, spec['bridge']):
@@ -394,7 +395,7 @@ def validate(data):
                     assert room['layers'][1][i] == 6000 + source
                     assert room['layers'][0][i] == 6610
         else:
-            low = (15, 9) if key == 'B' else (spec['c_exit'], 11)
+            low = (15, 9) if key == 'B' else (spec['c_exit'], 10)
             high = (15, spec['bridge']) if key == 'B' else (0, spec['bridge'])
             assert high in flood(dry, low), (key, 'stairs disconnected')
             assert high not in flood(dry - stairs, low), (key, 'stairs bypass')

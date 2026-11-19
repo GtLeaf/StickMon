@@ -63,7 +63,43 @@ void writePreview(Canvas565& canvas, const char* name) {
 }
 
 struct AmoledEcologyTestAccess {
+    static void checkValleyBridgeFrames(Canvas565& canvas) {
+        ExploreMapGenerator::Map map{};
+        assert(ExploreMapGenerator::generateValleyRegion(0, {13, 2}, false, map));
+        ExploreRouteViewModel model{};
+        model.area = map.areaIndex;
+        model.map = &map;
+        model.cameraX = 160;
+        PixelCache565 cache;
+
+        // The open water at (10,4) and the bridge at (10,5) share a water tile.
+        constexpr int size = ExploreRouteGeometry::TILE_SIZE * EXPLORE_ROUTE_SCALE;
+        constexpr int column = 10, waterRow = 4;
+        const int screenX = column * size - exploreRoutePixel(model.cameraX);
+        assert(ExploreTileSemantics::bridgeDeck(map.layers[2][5 * ExploreMapGenerator::WIDTH + column]));
+        std::vector<uint16_t> reference(size * size * 2);
+        Canvas565 expected;
+        expected.attach({reference.data(), size, size * 2, false});
+        for (uint8_t frame = 0; frame < 8; ++frame) {
+            expected.fillSprite(0);
+            for (int row = 0; row < 2; ++row) {
+                const auto cell = (waterRow + row) * ExploreMapGenerator::WIDTH + column;
+                for (const auto& layer : map.layers) {
+                    if (layer[cell]) assert(GameAssets::drawExploreTileTo(
+                        expected, layer[cell], 0, row * size, frame, EXPLORE_ROUTE_SCALE));
+                }
+            }
+            model.mapFrame = frame;
+            drawExploreRouteMapLayer(canvas, model, cache, 0, EXPLORE_ROUTE_MAP_BOTTOM);
+            for (int y = 0; y < 2 * size; ++y)
+                for (int x = 0; x < size; ++x)
+                    assert(canvas.readPixel(screenX + x, waterRow * size + y) ==
+                           expected.readPixel(x, y));
+        }
+    }
+
     static void checkValleyWorldCache(DesktopPlatform& desktop, Canvas565& canvas) {
+        checkValleyBridgeFrames(canvas);
         constexpr auto area = ExploreMapGenerator::ANCIENT_WATERFALL_VALLEY_AREA;
         unsigned transitions = 0;
         for (const uint32_t seed : {38U, 294U}) {
@@ -97,6 +133,16 @@ struct AmoledEcologyTestAccess {
                     assert(session.finishAtEnd(app.gameState));
                     app.applyExploreEffects(now);
                     assert(map.valleyNode == target && map.seed == seed);
+                    if (from == 5 && target == 10) {
+                        // The south doorway is one row beyond the party's landing.
+                        const auto& pose = app.explorePresenter_.state();
+                        assert(map.entry.edge == ExploreMapGenerator::Edge::BOTTOM);
+                        assert(map.entry.point.y == ExploreMapGenerator::HEIGHT - 2);
+                        assert(pose.exploreRouteWorldY == ExploreRouteGeometry::tileCenter(map.entry.point.y));
+                        assert(pose.exploreRouteDirection == static_cast<uint8_t>(PokemonSprites::WalkDirection::UP));
+                        assert(pose.exploreRouteFollowerWorldX == pose.exploreRouteWorldX);
+                        assert(pose.exploreRouteFollowerWorldY == pose.exploreRouteWorldY);
+                    }
                     assert(app.needsRender());
                     app.render(canvas);
                     const auto actual = pixels(canvas);

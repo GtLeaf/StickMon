@@ -3017,8 +3017,8 @@ void ExploreScene::initializeRouteFollowerPosition(bool useTrailPosition) {
             routeWorldY - routeFollowerWorldY,
             routeWalkDirection);
         ui.routeVisual.routeFollowerVisualWalkDirection = routeFollowerWalkDirection;
-    } else if (ExploreRouteGeometry::hasValleyForestCenterline(&generatedMap)) {
-        const auto start = ExploreRouteGeometry::valleyForestFollowerStart(
+    } else if (ExploreRouteGeometry::usesValleyEntranceLane(generatedMap)) {
+        const auto start = ExploreRouteGeometry::valleyEntranceFollowerStart(
             generatedMap, {routeWorldX, routeWorldY}, ROUTE_FOLLOWER_START_OFFSET);
         routeFollowerWorldX = start.x;
         routeFollowerWorldY = start.y;

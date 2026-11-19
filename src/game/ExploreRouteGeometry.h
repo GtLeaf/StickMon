@@ -23,8 +23,16 @@ inline constexpr bool hasValleyForestCenterline(const ExploreMapGenerator::Map* 
     return map && map->valleyJourney && map->valleyNode < 6;
 }
 
-// Stay on the entrance lane. A cave mouth has no trailing road behind it.
-inline WorldPoint valleyForestFollowerStart(const ExploreMapGenerator::Map& map,
+inline constexpr bool usesValleyEntranceLane(const ExploreMapGenerator::Map& map) {
+    using namespace ExploreMapGenerator;
+    return hasValleyForestCenterline(&map) ||
+           (map.areaIndex == ANCIENT_WATERFALL_VALLEY_AREA &&
+            map.entry.edge == Edge::BOTTOM && map.entry.point.y + 1 < HEIGHT);
+}
+
+// A cave mouth starts both party members on the same landing. The follower
+// gains its normal spacing as the leader takes the first steps.
+inline WorldPoint valleyEntranceFollowerStart(const ExploreMapGenerator::Map& map,
                                            WorldPoint leader, float spacing) {
     using namespace ExploreMapGenerator;
     switch (map.entry.edge) {

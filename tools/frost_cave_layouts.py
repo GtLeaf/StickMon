@@ -78,6 +78,8 @@ def make_spec(family,seed):
     rng=random.Random(seed)
     if family==0:
         low=rng.choice([7,8,9]); high=rng.choice([2,3]); x=rng.choice([3,4]); z=rng.choice([9,10,11])
+        # Leave five columns of snow between the two vertical trail segments.
+        z = max(z, x + 6)
         entry=((0,high),Edge.LEFT); exits=(((15,high),Edge.RIGHT),((z,11),Edge.BOTTOM)); junction=(z,low)
         stem=[(0,high),(x,high),(x,low),(z,low)]
         routes=[stem+[(z,high),(15,high)],stem+[(z,11)]]
@@ -106,6 +108,13 @@ def make_spec(family,seed):
     expanded=[line(p) for p in routes]
     route=set().union(*map(set,expanded))
     floor=set().union(*(rect(x-1,y-1,x+1,y+1) for x,y in route))
+    if family == 0:
+        # Frame the hall with side alcoves for the crystals and one outer
+        # wall row. The horizontal trail runs along its southern edge.
+        west_crystal = z - 6
+        if west_crystal == x:
+            west_crystal -= 1  # Keep the crystal beside the vertical entry trail.
+        floor |= rect(min(x, west_crystal - 1), low - 5, z + 2, low)
     for x,y,rx,ry in rooms:
         # Room dimensions vary independently of the branch skeleton.
         floor |= rect(x-rx,y-ry,x+rx+(rng.randrange(2) if x<12 else 0),y+ry)
@@ -265,6 +274,7 @@ def cpp_table():
         '    uint8_t iceRect[4];', '    ExploreMapGenerator::Point junction;',
         '    ExploreMapGenerator::Point controls[2][8];', '    uint8_t controlCounts[2];',
         '};', f'constexpr uint16_t COUNT = {LAYOUT_COUNT};',
+        f'constexpr uint8_t FAMILY_COUNT = {FAMILY_COUNT};',
         'constexpr Layout LAYOUTS[COUNT] = {']
     for i in range(LAYOUT_COUNT):
         spec = layout(i)

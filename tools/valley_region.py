@@ -137,7 +137,7 @@ def bridge_room(data, key):
         links = [(13, 3), (255, 0)]
         roads = [mask(p for path in src['paths'] for p in path['cells'])] * 2
     return dict(layers=layers, roads=roads, stairs=mask(src['stairs']), forest=False,
-                portals=[portal(p['visual_anchor'], {'TOP': 0, 'RIGHT': 1, 'BOTTOM': 2, 'LEFT': 3}[p['edge']], *link)
+                portals=[portal(p['trigger'], {'TOP': 0, 'RIGHT': 1, 'BOTTOM': 2, 'LEFT': 3}[p['edge']], *link)
                          for p, link in zip(src['portals'], links)])
 
 

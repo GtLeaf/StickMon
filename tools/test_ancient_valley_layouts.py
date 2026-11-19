@@ -16,7 +16,7 @@ class AncientValleyTests(unittest.TestCase):
     def test_routes_have_clear_feet_dry_approaches_and_vertical_stairs(self):
         for spec in DATA['layouts']:
             shell = set(map(tuple, spec['shell']))
-            ports = {tuple(p['visual_anchor']) for p in spec['portals']}
+            ports = {tuple(p['visual_anchor']) for p in spec['portals'] if p['edge'] != 2}
             stairs = set(map(tuple, spec['stairs']))
             blocked = (set(map(tuple, spec['walls'])) - ports)
             for name in ('cliffs', 'water', 'decoration'):

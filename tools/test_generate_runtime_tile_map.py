@@ -439,6 +439,26 @@ class RuntimeTileMapTests(unittest.TestCase):
         self.assertEqual(profiles,{False,True})
         self.assertGreater(len(shapes),200)
 
+    def test_frost_a_has_an_open_crystal_hall_along_the_snow_trail(self):
+        for seed in range(0, LAYOUT_COUNT, 4):
+            for edge, inward in ((Edge.LEFT, 1), (Edge.RIGHT, -1)):
+                m = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA)
+                jx, jy = m.junction
+                trail = set(m.paths[0].points)
+                self.assertEqual(m.layers[1].count(4508), 1)
+                self.assertEqual(m.layers[1].count(4509), 1)
+                left = m.layers[1].index(4508) % 16
+                right = m.layers[1].index(4509) % 16
+                self.assertGreaterEqual((jx - left) * inward, 6)
+                self.assertGreaterEqual((right - jx) * inward, 1)
+                for offset in range(1, 6):
+                    x = jx - offset * inward
+                    self.assertIn((x, jy), trail)
+                    for y in range(jy - 4, jy):
+                        i = y * 16 + x
+                        self.assertEqual(tuple(layer[i] for layer in m.layers),
+                                         (FROST_FLOOR_TILE, 0, 0), (seed, edge, x, y))
+
     def test_frost_ice_routes_slide_straight_and_fork_on_dry_ground(self):
         profiles = set()
         for seed in range(LAYOUT_COUNT):
@@ -727,6 +747,8 @@ class RuntimeTileMapTests(unittest.TestCase):
                     self.assertEqual(source(m.layers[1][(y-1)*16+x]), 524)
                     self.assertEqual(source(m.layers[1][y*16+x]), 532)
                 elif endpoint.edge == Edge.BOTTOM:
+                    self.assertEqual(y, 10)
+                    y += 1  # The solid doorway art sits south of the warp.
                     self.assertEqual([source(m.layers[1][y*16+xx]) for xx in (x-1,x,x+1)], [507,508,509])
                     self.assertEqual(source(m.layers[2][y*16+x]), 516)
                 else:

@@ -188,10 +188,10 @@ void drawExploreTileFallback(Canvas565& canvas, uint16_t tileId,
     }
 }
 
-bool animatedCell(const ExploreMapGenerator::Map& map, int cell) {
+uint8_t firstAnimatedLayer(const ExploreMapGenerator::Map& map, int cell) {
     for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT; ++layer)
-        if (GameAssets::isExploreTileAnimated(map.layers[layer][cell])) return true;
-    return false;
+        if (GameAssets::isExploreTileAnimated(map.layers[layer][cell])) return layer;
+    return ExploreMapGenerator::LAYER_COUNT;
 }
 
 RenderCacheKey exploreWorldKey(Canvas565& canvas, const ExploreRouteViewModel& model,
@@ -378,33 +378,26 @@ void drawExploreMapAnimations(Canvas565& canvas,
     const int lastY = std::min<int>(ExploreMapGenerator::HEIGHT - 1,
         (cameraY + bottom - EXPLORE_ROUTE_MAP_TOP - 1) / tileSize);
 
-    for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT;
-         ++layer) {
-        for (int tileY = firstY; tileY <= lastY; ++tileY) {
-            int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
-            if (y + tileSize <= rowBegin || y >= rowEnd) continue;
-            for (int tileX = firstX; tileX <= lastX; ++tileX) {
-                uint16_t tileId = map.layers[layer]
-                    [tileY * ExploreMapGenerator::WIDTH + tileX];
-                if (!GameAssets::isExploreTileAnimated(tileId)) continue;
-                int x = tileX * tileSize - cameraX;
-                // Transparent object frames must replace the cached pose. Rebuild
-                // this cell from ground to foreground so no old silhouette leaks
-                // through and higher layers remain in front of the animation.
-                if (ExploreEditorTiles::tile(tileId) || ExploreLakeTiles::contains(tileId)) {
-                    canvas.fillRect(x, y, tileSize, tileSize, fieldColor);
-                    for (uint8_t z = 0; z < ExploreMapGenerator::LAYER_COUNT; ++z) {
-                        const uint16_t id = map.layers[z][tileY * ExploreMapGenerator::WIDTH + tileX];
-                        if (id && !GameAssets::drawExploreTile(id, x, y, animationFrame, EXPLORE_ROUTE_SCALE))
-                            drawExploreTileFallback(canvas, id, x, y, z, fieldColor);
-                    }
-                    continue;
-                }
-                if (!GameAssets::drawExploreTile(
-                        tileId, x, y, animationFrame, EXPLORE_ROUTE_SCALE)) {
-                    drawExploreTileFallback(
-                        canvas, tileId, x, y, layer, fieldColor);
-                }
+    for (int tileY = firstY; tileY <= lastY; ++tileY) {
+        const int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
+        if (y + tileSize <= top || y >= bottom) continue;
+        for (int tileX = firstX; tileX <= lastX; ++tileX) {
+            const int cell = tileY * ExploreMapGenerator::WIDTH + tileX;
+            uint8_t first = firstAnimatedLayer(map, cell);
+            if (first == ExploreMapGenerator::LAYER_COUNT) continue;
+
+            const int x = tileX * tileSize - cameraX;
+            const auto animatedTile = map.layers[first][cell];
+            // Transparent frames need their background restored before drawing.
+            if (ExploreEditorTiles::tile(animatedTile) || ExploreLakeTiles::contains(animatedTile)) {
+                canvas.fillRect(x, y, tileSize, tileSize, fieldColor);
+                first = 0;
+            }
+            // A water update also repaints any bridge or scenery above it.
+            for (uint8_t layer = first; layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
+                const auto tile = map.layers[layer][cell];
+                if (tile && !GameAssets::drawExploreTile(tile, x, y, animationFrame, EXPLORE_ROUTE_SCALE))
+                    drawExploreTileFallback(canvas, tile, x, y, layer, fieldColor);
             }
         }
     }
@@ -523,7 +516,8 @@ bool drawExploreRouteMapLayer(Canvas565& canvas,
                 ((ExploreTileSemantics::denseGrass(model.map->layers[0][cell]) &&
                   grassFrame(model, cell, model.map->layers[0][cell]).phase) ||
                  (model.map->layers[1][cell] == 391 && grassFrame(model, cell, 391).phase));
-            tonePass->cells[cell] = tonePass->cells[cell] || animatedCell(*model.map, cell) || grass;
+            tonePass->cells[cell] = tonePass->cells[cell] || grass ||
+                firstAnimatedLayer(*model.map, cell) < ExploreMapGenerator::LAYER_COUNT;
         }
     }
     if (drawExploreRouteWorldViewport(

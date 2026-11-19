@@ -598,7 +598,7 @@ def stamp_ancient_cave_entrances(runtime_map):
 def stamp_ancient_waterfall_valley(runtime_map):
     spec = valley_layout(runtime_map.entry.edge)
     runtime_map.layers = spec['layers']
-    ports = {tuple(p['visual_anchor']) for p in spec['portals']}
+    ports = {tuple(p['visual_anchor']) for p in spec['portals'] if p['edge'] != 2}
     solid = set(map(tuple, spec['cliffs'])) | (set(map(tuple, spec['walls'])) - ports)
     return (set(map(tuple, spec['water'])), set(), solid,
             set(map(tuple, spec['stairs'])), set(map(tuple, spec['decoration'])))
@@ -1835,16 +1835,22 @@ def frost_route_tile(route, x, y):
     return FROST_ROUTE_TILES[mask]
 
 
-def frost_scenery(runtime_map, floor, walls, route, seed):
+def frost_scenery(runtime_map, floor, walls, route, seed, hall_direction):
     rng = XorShift32(seed ^ 0xA5F1537D)
     occupied = set(walls)
     portals = {runtime_map.entry.point, *(path.exit.point for path in runtime_map.paths)}
     small_clearance = route | expanded(portals | {runtime_map.junction})
+    fork_x, trail_y = runtime_map.junction
+    if hall_direction:
+        small_clearance |= {(fork_x - offset * hall_direction, y)
+                            for offset in range(1, 6) for y in range(trail_y - 4, trail_y)}
     tall_clearance = small_clearance
     target = 10
     tiles = (4508, 4509, 4508, 4507, 4544, 4510, 4507, 4544, 4542, 4507, 4510, 4544)
     anchors = []
     for ordinal, tile in enumerate(tiles[:target]):
+        if hall_direction and ordinal == 2:
+            continue  # The hall uses a pair of tall crystals.
         tall = tile in (4508, 4509)
         clearance = tall_clearance if tall else small_clearance
         def cells(x, y):
@@ -1855,6 +1861,9 @@ def frost_scenery(runtime_map, floor, walls, route, seed):
                     and all(runtime_map.layers[0][py * MAP_W + px] not in SMOOTH_ICE_TILE_IDS
                             for px, py in footprint))
         def score(x, y):
+            if hall_direction and tall:
+                flank_x = fork_x + (-6 if ordinal == 0 else 1) * hall_direction
+                return -abs(x - flank_x) - abs(y - (trail_y - 3))
             wall = any((x + dx, y + dy) in walls
                        for dx in (-1, 0, 1) for dy in (-1, 0, 1))
             if tall:
@@ -1991,7 +2000,8 @@ def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by
     # surface and slide semantics; the trail resumes on the dry landing.
     for x, y in route_cells - ice:
         runtime_map.layers[0][y * MAP_W + x] = frost_route_tile(route_cells, x, y)
-    blocked = frost_scenery(runtime_map, floor, walls, route_cells, seed)
+    hall_direction = (-1 if mirror_x else 1) if spec['family'] == 0 else 0
+    blocked = frost_scenery(runtime_map, floor, walls, route_cells, seed, hall_direction)
 
     if not stamp_frost_portals(runtime_map, level, level_count, entered_by_ladder):
         raise ValueError("frost portal is not attached to scene geometry")

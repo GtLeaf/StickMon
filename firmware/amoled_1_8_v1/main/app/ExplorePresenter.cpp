@@ -112,8 +112,8 @@ void ExplorePresenter::resetMap(const ExploreSession::State& route,
     state_.exploreRouteFollowerDirection = state_.exploreRouteDirection;
     const float followerOffset =
         ExploreRouteGeometry::TILE_SIZE * 0.75f;
-    if (ExploreRouteGeometry::hasValleyForestCenterline(&route.exploreRouteMap)) {
-        const auto follower = ExploreRouteGeometry::valleyForestFollowerStart(
+    if (ExploreRouteGeometry::usesValleyEntranceLane(route.exploreRouteMap)) {
+        const auto follower = ExploreRouteGeometry::valleyEntranceFollowerStart(
             route.exploreRouteMap, start, followerOffset);
         state_.exploreRouteFollowerWorldX = follower.x;
         state_.exploreRouteFollowerWorldY = follower.y;

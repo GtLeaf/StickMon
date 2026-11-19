@@ -79,7 +79,7 @@ def cpp_table():
         text += ['      }, {']
         for layer in spec['layers']:
             text += ['        {'] + ['          ' + ', '.join(map(str, layer[y*16:y*16+16])) + ',' for y in range(12)] + ['        },']
-        ports = {tuple(p['visual_anchor']) for p in spec['portals']}
+        ports = {tuple(p['visual_anchor']) for p in spec['portals'] if p['edge'] != 2}
         solid = (set(map(tuple, spec['walls'])) - ports) | set(map(tuple, spec['cliffs'])) | set(map(tuple, spec['decoration']))
         masks = [set(map(tuple, spec['water'])), solid, set(map(tuple, spec['stairs']))]
         text += ['      },']

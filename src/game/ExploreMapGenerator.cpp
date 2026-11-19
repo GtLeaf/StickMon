@@ -2562,7 +2562,7 @@ uint16_t frostRouteTile(const CellMask& route, uint8_t x, uint8_t y) {
 }
 
 bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
-                       const CellMask& route, CellMask& blocked) {
+                       const CellMask& route, int hallDirection, CellMask& blocked) {
     Rng rng(map.seed ^ 0xA5F1537DU);
     blocked = walls;
     CellMask portals;
@@ -2572,6 +2572,11 @@ bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
         portals.add(map.paths[i].exit.point.x, map.paths[i].exit.point.y);
     CellMask smallClearance = expandedMask(portals, 1);
     smallClearance.unite(route);
+    if (hallDirection) {
+        for (int offset = 1; offset <= 5; ++offset)
+            for (int y = map.junction.y - 4; y < map.junction.y; ++y)
+                smallClearance.add(map.junction.x - offset * hallDirection, y);
+    }
     const CellMask& tallClearance = smallClearance;
     constexpr uint8_t target = 10;
     const uint16_t tiles[] = {4508, 4509, 4508, 4507, 4544, 4510,
@@ -2579,6 +2584,7 @@ bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
     Point anchors[12]{};
     uint8_t anchorCount = 0;
     for (uint8_t ordinal = 0; ordinal < target; ++ordinal) {
+        if (hallDirection && ordinal == 2) continue;  // Two tall crystals flank the hall.
         const uint16_t tile = tiles[ordinal];
         const bool tall = tile == 4508 || tile == 4509;
         const CellMask& clearance = tall ? tallClearance : smallClearance;
@@ -2591,6 +2597,10 @@ bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
             return true;
         };
         auto score = [&](uint8_t x, uint8_t y) {
+            if (hallDirection && tall) {
+                const int flankX = map.junction.x + (ordinal == 0 ? -6 : 1) * hallDirection;
+                return -std::abs(x - flankX) - std::abs(y - (map.junction.y - 3));
+            }
             bool wall = false;
             for (int dx = -1; dx <= 1; ++dx)
                 for (int dy = -1; dy <= 1; ++dy)
@@ -2641,7 +2651,8 @@ bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
 bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
                        FrostContext frost) {
     (void)frost;  // Portal roles remain stable on first, middle and final rooms.
-    const auto& spec = ExploreFrostLayouts::LAYOUTS[seed % ExploreFrostLayouts::COUNT];
+    const auto layoutIndex = seed % ExploreFrostLayouts::COUNT;
+    const auto& spec = ExploreFrostLayouts::LAYOUTS[layoutIndex];
     const bool mirrorX = entryEdge == Edge::RIGHT || (seed & 0x10000000U) != 0;
     out.seed = seed;
     out.areaIndex = FROST_CRYSTAL_CAVE_AREA;
@@ -2751,7 +2762,9 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
                 out.layers[0][y * WIDTH + x] = frostRouteTile(route, x, y);
         }
     }
-    if (!stampFrostScenery(out, floor, walls, route, blocked)) return false;
+    const bool crystalHall = layoutIndex % ExploreFrostLayouts::FAMILY_COUNT == 0;
+    const int hallDirection = crystalHall ? (mirrorX ? -1 : 1) : 0;
+    if (!stampFrostScenery(out, floor, walls, route, hallDirection, blocked)) return false;
 
     if (!stampFrostPortals(out)) return false;
 

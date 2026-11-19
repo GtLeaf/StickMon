@@ -43,6 +43,25 @@ class ValleyRegionTests(unittest.TestCase):
                       if 6 <= p['target'] < 14]
             self.assertEqual([n for n, _ in mouths], [4, 5])
 
+    def test_south_cave_portals_stop_on_floor_and_face_the_mouth(self):
+        for seed in range(16):
+            for node in range(6, 14):
+                room = room_for(seed, node)
+                for entry in range(len(room['portals'])):
+                    if node == 10 and entry >= 2 or node == 13 and entry < 2:
+                        continue
+                    m = generate_valley_region(seed, node, entry)
+                    for path in m.paths:
+                        for endpoint, points in ((m.entry, path.points),
+                                                 (path.exit, path.points[::-1])):
+                            if endpoint.edge != 2:
+                                continue
+                            x, y = endpoint.point
+                            self.assertEqual(points[:2], [(x, 10), (x, 9)])
+                            self.assertEqual(y, 10)
+                            self.assertEqual(m.layers[2][11 * 16 + x], 4812)
+                            self.assertFalse(room['roads'][node == 13][11] & (1 << x))
+
     def test_runtime_routes_replay_and_elevation(self):
         for seed in (*range(32), *range(256, 288), 0, 0xFFFFFFFF):
             for node in range(14):
