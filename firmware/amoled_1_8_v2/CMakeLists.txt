@@ -49,6 +49,10 @@ endif()
 if(NOT CONFIG_FATFS_LFN_HEAP AND NOT CONFIG_FATFS_LFN_STACK)
     message(FATAL_ERROR "V2 photos require FAT long file names; use tools/build_amoled_variant.sh or enable CONFIG_FATFS_LFN_HEAP in sdkconfig")
 endif()
+# The published photo slot also needs space for the temporary .tmp suffix.
+if(CONFIG_FATFS_MAX_LFN LESS 15)
+    message(FATAL_ERROR "V2 photos require CONFIG_FATFS_MAX_LFN of at least 15; update cached sdkconfig")
+endif()
 
 # ESP-IDF appends its default C++ standard during project setup. Append the
 # project standard afterward so the final compiler option is unambiguous.

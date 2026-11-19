@@ -4,10 +4,13 @@
 #include "esp_partition.h"
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
+#include <mutex>
 #include <sys/stat.h>
 namespace Stickmon {
 // Shared lifetime with Claw. Neither owner unmounts the player archive.
 inline bool mountPlayerVolume(){
+    static std::mutex mountMutex;
+    const std::lock_guard<std::mutex> lock(mountMutex);
     static bool mounted=false;
     if(mounted)return true;
     const auto* partition=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_FAT,"brainfs");

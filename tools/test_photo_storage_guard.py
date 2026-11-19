@@ -8,8 +8,9 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run([str(binary)],check=True)
     base=Path(directory)
     (base/'wear_levelling.h').write_text('''#pragma once
+#include <atomic>
 using wl_handle_t=int;constexpr int WL_INVALID_HANDLE=-1;
-extern int liveHandles;
+extern std::atomic<int> liveHandles;
 inline int wl_unmount(wl_handle_t handle){if(handle!=0||liveHandles!=1)return -1;--liveHandles;return 0;}
 ''')
     (base/'esp_log.h').write_text('#pragma once\n#define ESP_LOGE(...) ((void)0)\n')
@@ -20,7 +21,7 @@ inline int wl_unmount(wl_handle_t handle){if(handle!=0||liveHandles!=1)return -1
 constexpr int ESP_OK=0,ESP_FAIL=-1,ESP_ERR_INVALID_STATE=2;
 constexpr int ESP_PARTITION_TYPE_DATA=1,ESP_PARTITION_SUBTYPE_DATA_FAT=2;
 struct esp_partition_t {size_t size;};
-extern int scenario,mountCalls,formats;
+extern int scenario;
 inline const esp_partition_t* esp_partition_find_first(int,int,const char*){static esp_partition_t part{8197};return scenario==4?nullptr:&part;}
 inline int esp_partition_read(const esp_partition_t*,size_t offset,void*out,size_t n){
  if(scenario==2)return ESP_FAIL;
@@ -33,15 +34,26 @@ inline int esp_partition_read(const esp_partition_t*,size_t offset,void*out,size
     (base/'esp_vfs_fat.h').write_text('''#pragma once
 #include "esp_partition.h"
 #include "wear_levelling.h"
+#include <chrono>
+#include <thread>
+extern std::atomic<int> mountCalls,formats;
 struct esp_vfs_fat_mount_config_t {bool format_if_mount_failed=false;int max_files=0;size_t allocation_unit_size=0;};
 inline int esp_vfs_fat_spiflash_mount_rw_wl(const char*,const char*,const esp_vfs_fat_mount_config_t*c,wl_handle_t* handle){
- ++mountCalls;if(c->format_if_mount_failed)++formats;
+ const int call=++mountCalls;
+ if(scenario==7&&call==1){
+   const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(500);
+   while(mountCalls==1&&std::chrono::steady_clock::now()<deadline)
+     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+ }
+ if(c->format_if_mount_failed)++formats;
  // ESP-IDF can hand back an allocated wear levelling handle even on FAT mount failure.
- *handle=WL_INVALID_HANDLE;if(liveHandles)return ESP_FAIL;
- ++liveHandles;*handle=0;
+ *handle=WL_INVALID_HANDLE;
+ int expected=0;
+ if(!liveHandles.compare_exchange_strong(expected,1))return ESP_FAIL;
+ *handle=0;
  return scenario==3||c->format_if_mount_failed?ESP_OK:ESP_FAIL;
 }
 ''')
     binary=base/'volume'
-    subprocess.run(['c++','-std=c++17','-Wall','-Wextra','-Werror','-Isrc','-I'+directory,'tools/photo_volume_host.cpp','-o',str(binary)],cwd=ROOT,check=True)
-    for scenario in [0,1,2,3,4,6]:subprocess.run([str(binary),str(scenario)],check=True)
+    subprocess.run(['c++','-std=c++17','-Wall','-Wextra','-Werror','-pthread','-Isrc','-I'+directory,'tools/photo_volume_host.cpp','-o',str(binary)],cwd=ROOT,check=True)
+    for scenario in [0,1,2,3,4,6,7]:subprocess.run([str(binary),str(scenario)],check=True)

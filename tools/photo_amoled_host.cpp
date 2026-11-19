@@ -89,6 +89,14 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     assert(app.sceneFlow.current()==S::EXPLORE_ROUTE&&app.exploreSessionActive&&
            app.exploreTransition_.state().phase==AmoledApp::ExpeditionDeparturePhase::NONE&&
            "Viewfinder back must stay in the expedition when the update time predates the tap handler");
+    const auto careTime=app.lastCareMs;
+    const auto gameMinutes=app.gameState.gameMinutesTotal;
+    app.gameState.settings.idleTimeoutIndex=4;
+    app.lastInteractionMs=desktop.millis()-0x80000010u;
+    app.update(desktop.millis());
+    assert(app.lastCareMs==careTime&&app.gameState.gameMinutesTotal==gameMinutes&&
+           "An old interaction with idle timeout disabled must not rewind the update clock");
+    app.gameState.settings.idleTimeoutIndex=0;
     openCamera();
     shot("02-viewfinder");bands();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
     event(TouchEventType::DOWN,184,396);app.cancelTouch();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);

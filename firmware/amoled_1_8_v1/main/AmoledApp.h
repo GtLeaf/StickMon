@@ -184,6 +184,7 @@ public:
 private:
     PhotoSession photoFlow_;
     uint32_t photoClockMs_=0;
+    bool photoClosedSinceUpdate_ = false;
     void openPhotoCamera(uint32_t nowMs);
     void handlePhotoTouch(const TouchEvent& event);
     void renderPhotoWorld(Canvas565& canvas,uint16_t top,uint16_t bottom) const;

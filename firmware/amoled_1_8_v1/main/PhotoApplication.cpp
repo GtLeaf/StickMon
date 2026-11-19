@@ -53,6 +53,7 @@ void AmoledApp::handlePhotoTouch(const TouchEvent& event){
     }else if(request==PhotoSession::Request::CLOSE_CAMERA){
         const bool saved=photoFlow_.saved();photoFlow_.close();
         const auto now=Platform::clock().millis();lastInteractionMs=now;
+        photoClosedSinceUpdate_ = true;
         if (!market_) resumeExploreRoute(now);
         if(saved)setToast(Ui::Photo::SAVED,now);
     }else if(request==PhotoSession::Request::CLOSE_ALBUM)photoFlow_.close();
