@@ -2954,6 +2954,11 @@ void AmoledApp::updateBattery(uint32_t nowMs) {
 }
 
 void AmoledApp::update(uint32_t nowMs) {
+    // Touch handlers may sample the clock after the caller's loop timestamp.
+    // Keep route and idle timers from running backwards after that interaction.
+    if (static_cast<int32_t>(nowMs - lastInteractionMs) < 0) {
+        nowMs = lastInteractionMs;
+    }
     if (sceneFlow.current() != AppSceneFlow::Scene::HOME && homePhotoFrame_.active()) {
         homePhotoFrame_.close();
     }

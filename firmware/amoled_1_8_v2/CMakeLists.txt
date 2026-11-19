@@ -46,6 +46,9 @@ project(stickmon_amoled_1_8_v2)
 if(NOT CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE)
     message(FATAL_ERROR "V2 OTA requires CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y; use tools/build_amoled_variant.sh or update cached sdkconfig")
 endif()
+if(NOT CONFIG_FATFS_LFN_HEAP AND NOT CONFIG_FATFS_LFN_STACK)
+    message(FATAL_ERROR "V2 photos require FAT long file names; use tools/build_amoled_variant.sh or enable CONFIG_FATFS_LFN_HEAP in sdkconfig")
+endif()
 
 # ESP-IDF appends its default C++ standard during project setup. Append the
 # project standard afterward so the final compiler option is unambiguous.
