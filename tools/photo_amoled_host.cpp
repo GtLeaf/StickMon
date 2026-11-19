@@ -68,9 +68,24 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     tap(44,396);
     assert(app.sceneFlow.current()==AppSceneFlow::Scene::EXPLORE_ROUTE&&"Explore lower-left shortcut must enter camera instead of BAG");
     assert(app.photoFlow_.page()==P::VIEWFINDER&&app.exploreSession_.state().exploreRoutePaused);
+    app.gameState.settings.idleTimeoutIndex=0;
+    event(TouchEventType::DOWN,36,28);
+    desktop.sleepMs(40);
+    const auto backLoopTime=desktop.millis();
+    // Like a hardware loop, sample the event time before processing input.
+    // The clock read while closing the camera can be a millisecond later.
+    desktop.sleepMs(1);
+    app.handleTouch({TouchEventType::UP,36,28,36,28,backLoopTime});
+    assert(!app.photoFlow_.active()&&!app.exploreSession_.state().exploreRoutePaused);
+    app.update(backLoopTime);
+    if(app.consumeLockRequest()) app.prepareDisplayLock(backLoopTime);
+    assert(app.sceneFlow.current()==S::EXPLORE_ROUTE&&app.exploreSessionActive&&
+           app.exploreTransition_.state().phase==AmoledApp::ExpeditionDeparturePhase::NONE&&
+           "Viewfinder back must stay in the expedition when the update time predates the tap handler");
+    tap(44,396);assert(app.photoFlow_.viewfinder());
     shot("02-viewfinder");bands();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
     event(TouchEventType::DOWN,184,396);app.cancelTouch();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
-    app.gameState.settings.idleTimeoutIndex=0;desktop.sleepMs(31000);app.update(desktop.millis());assert(!app.consumeLockRequest());
+    desktop.sleepMs(31000);app.update(desktop.millis());assert(!app.consumeLockRequest());
     // Geometry is asserted through production pixels, including off-center frames.
     auto frameAt=[&](int x,int y,bool force=true){
         if(force)app.forceFullRender();app.render(PixelRenderer::canvas());app.markRendered();
