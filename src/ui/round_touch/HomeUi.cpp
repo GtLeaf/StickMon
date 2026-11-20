@@ -93,6 +93,11 @@ void HomeUi::cancelTouch() {
     photoFrame_.cancelTouch();
 }
 
+void HomeUi::updateFrozenOverlay(uint32_t nowMs, RenderDemand& demand) {
+    demand.changed(photoFrame_.update(nowMs));
+    if (photoFrame_.settling()) demand.wakeIn(33);
+}
+
 void HomeUi::closeTransientOverlay() {
     wallFramePressed_ = false;
     photoFrame_.close();

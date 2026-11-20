@@ -13,6 +13,8 @@ public:
     void onExit() override;
     void render() override;
     bool roomVisualFrozen() const override { return photoFrame_.active(); }
+    void updateFrozenOverlay(uint32_t nowMs, RenderDemand& demand) override;
+    uint32_t visualFrameIntervalMs(uint32_t) const override { return photoFrame_.sliding() ? 33 : 66; }
     void closeTransientOverlay() override;
     bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
     void cancelTouch() override;

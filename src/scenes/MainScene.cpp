@@ -943,7 +943,10 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
         homeUi.closeTransientOverlay();
         return SceneUpdateResult::animate(66);
     }
-    return SceneUpdateResult::pollAfter(result.nextUpdateDelayMs);
+    RenderDemand demand;
+    demand.wakeIn(result.nextUpdateDelayMs);
+    homeUi.updateFrozenOverlay(nowMs, demand);
+    return demand.result();
 }
 
 bool MainScene::prepareDisplayLock() {

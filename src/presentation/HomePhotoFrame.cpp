@@ -17,9 +17,8 @@ namespace {
 using Rect = MenuGrid::Rect;
 constexpr int PANEL = 360;
 constexpr Rect FRAME{99, 91, 162, 162};
-constexpr Rect IMAGE{124, 116, 112, 112};
+constexpr Rect IMAGE{124, HomePhotoFrame::PHOTO_TOP, 112, HomePhotoFrame::PHOTO_HEIGHT};
 constexpr size_t PICKER_IMAGE_PIXELS = IMAGE.width * IMAGE.height;
-constexpr Rect LEFT{20, 141, 62, 62};
 constexpr Rect RIGHT{278, 141, 62, 62};
 constexpr Rect BUTTON{112, 277, 136, 46};
 constexpr Rect NOTICE{52, 58, 256, 28};
@@ -77,11 +76,28 @@ void drawCandidate(Canvas565& canvas, const uint16_t* pixels, const Rect& image)
     if (!pixels) label(canvas, "?", image, BitmapText::Font::PX16, PixelRenderer::rgb(67, 72, 66));
 }
 
-void drawNeighbor(Canvas565& canvas, const uint16_t* pixels, const Rect& rect) {
-    canvas.fillRect(rect.x, rect.y, rect.width, rect.height, PixelRenderer::rgb(148, 128, 104));
-    const Rect image{rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4};
-    drawCandidate(canvas, pixels, image);
-    canvas.multiplyRectRgb(image.x, image.y, image.width, image.height, 176, 176, 176);
+// Card centers travel from the frame center to the neighboring thumbnail.
+constexpr int CARD_STEP = RIGHT.x + RIGHT.width/2 - PANEL/2;
+constexpr int SETTLE_MS = 144;
+
+Rect cardBounds(int distance) {
+    const int weight = std::min(std::abs(distance), CARD_STEP);
+    const int size = IMAGE.width - (IMAGE.width - RIGHT.width) * weight / CARD_STEP;
+    return {PANEL/2 + distance - size/2, IMAGE.y + IMAGE.height/2 - size/2, size, size};
+}
+
+void drawCard(Canvas565& canvas, const uint16_t* pixels, Rect rect, int distance) {
+    const int weight = std::min(std::abs(distance), CARD_STEP);
+    const int border = (2 * weight + CARD_STEP/2) / CARD_STEP;
+    if (border) {
+        canvas.fillRect(rect.x, rect.y, rect.width, rect.height, PixelRenderer::rgb(148,128,104));
+        rect = {rect.x + border, rect.y + border, rect.width - 2*border, rect.height - 2*border};
+    }
+    drawCandidate(canvas, pixels, rect);
+    if (weight) {
+        const int gain = 256 - 80 * weight / CARD_STEP;
+        canvas.multiplyRectRgb(rect.x, rect.y, rect.width, rect.height, gain, gain, gain);
+    }
 }
 
 }  // namespace
@@ -128,6 +144,7 @@ void HomePhotoFrame::close() {
 
 bool HomePhotoFrame::back() {
     if (!active_) return false;
+    cancelTouch();
     if (!picking_) {
         close();
     } else {
@@ -140,9 +157,13 @@ bool HomePhotoFrame::back() {
     return true;
 }
 
-void HomePhotoFrame::cancelTouch() {
+bool HomePhotoFrame::cancelTouch() {
     tap_.cancel();
-    swipeDown_ = false;
+    swipeDown_ = dragging_ = false;
+    const bool changed = slide_ != 0;
+    slide_ = settleFrom_ = 0;
+    photosDirty_ |= changed;
+    return changed;
 }
 
 void HomePhotoFrame::loadPreview() {
@@ -218,14 +239,28 @@ const uint16_t* HomePhotoFrame::pickerImage(unsigned index) const {
     return pickerImages_.data() + index * PICKER_IMAGE_PIXELS;
 }
 
-bool HomePhotoFrame::moveSelection(int delta) {
-    const int next = static_cast<int>(selection_) + delta;
-    if (next < 0 || next >= static_cast<int>(library_.count())) return false;
-    selection_ = static_cast<unsigned>(next);
-    layoutDirty_ |= notice_ != nullptr;
-    notice_ = nullptr;
+void HomePhotoFrame::settle(int delta, uint32_t nowMs) {
+    if (delta) {
+        selection_ = static_cast<unsigned>(static_cast<int>(selection_) + delta);
+        slide_ += delta * CARD_STEP;  // Rebase without shifting any visible card.
+        layoutDirty_ |= notice_ != nullptr;
+        notice_ = nullptr;
+    }
+    settleFrom_ = slide_;
+    settleStart_ = nowMs;
     photosDirty_ = true;
-    return true;
+}
+
+bool HomePhotoFrame::update(uint32_t nowMs) {
+    if (!settling()) return photosDirty_;
+    const int elapsed = std::clamp<int32_t>(static_cast<int32_t>(nowMs - settleStart_), 0, SETTLE_MS);
+    const int remaining = SETTLE_MS - elapsed;
+    const int offset = settleFrom_ * remaining * remaining / (SETTLE_MS * SETTLE_MS);
+    const bool changed = slide_ != offset;
+    slide_ = offset;
+    if (!slide_) settleFrom_ = 0;
+    photosDirty_ |= changed;
+    return changed;
 }
 
 void HomePhotoFrame::confirm() {
@@ -252,6 +287,7 @@ void HomePhotoFrame::confirm() {
         setNotice(result);
         return;
     }
+    cancelTouch();
     binding_ = entry.id;
     cacheWallPhoto(image_.data(), Photos::WIDTH);
     pickerImages_.reset();
@@ -274,38 +310,58 @@ bool HomePhotoFrame::touch(const TouchTap::Event& event) {
     const bool inside = roundPanel_ ? onPanel(event.x, event.y) :
         event.x >= 0 && event.x < 368 && event.y >= 0 && event.y < 448;
     if (event.type == T::CANCEL || !inside) {
-        cancelTouch();
-        return false;
+        return cancelTouch();
     }
     const int x = event.x - (roundPanel_ ? 0 : 4);
-    const int y = event.y - (roundPanel_ ? 0 : 44);
+    const int y = event.y - (roundPanel_ ? 0 : RECT_PANEL_Y);
     int target = -1;
     if (BUTTON.contains(x, y)) target = ACTION;
-    else if (picking_ && selection_ && LEFT.contains(x, y)) target = PREVIOUS;
-    else if (picking_ && selection_ + 1 < library_.count() && RIGHT.contains(x, y)) target = NEXT;
+    else if (picking_ && selection_ && cardBounds(slide_ - CARD_STEP).contains(x, y)) target = PREVIOUS;
+    else if (picking_ && selection_ + 1 < library_.count() && cardBounds(slide_ + CARD_STEP).contains(x, y)) target = NEXT;
     else if (!FRAME.contains(x, y)) target = OUTSIDE;
 
     if (event.type == T::DOWN) {
-        swipeDown_ = picking_ && y >= FRAME.y && y < FRAME.y + FRAME.height;
+        swipeDown_ = picking_ && library_.count() > 1 && y >= FRAME.y && y < FRAME.y + FRAME.height;
+        if (swipeDown_) {
+            settleFrom_ = 0; // Hold the current on-screen position if grabbed mid-animation.
+            dragOrigin_ = slide_;
+        }
+        dragging_ = false;
         swipeX_ = x;
         swipeY_ = y;
-    } else if (event.type == T::UP && swipeDown_) {
-        swipeDown_ = false;
+    } else if (swipeDown_) {
         const int dx = x - swipeX_, dy = y - swipeY_;
-        if (std::abs(dx) >= 32 && std::abs(dx) > std::abs(dy)) {
+        if (std::abs(dx) > 6 && std::abs(dx) > std::abs(dy)) dragging_ = true;
+        if (dragging_) {
             tap_.cancel();
-            return moveSelection(dx < 0 ? 1 : -1);
+            int offset = std::clamp(dragOrigin_ + dx, -CARD_STEP, CARD_STEP);
+            if ((!selection_ && offset > 0) || (selection_ + 1 == library_.count() && offset < 0))
+                offset = std::clamp(offset / 4, -10, 10);
+            const bool changed = slide_ != offset;
+            slide_ = offset;
+            photosDirty_ |= changed;
+            if (event.type == T::UP) {
+                dragging_ = swipeDown_ = false;
+                const int delta = slide_ <= -32 ? 1 : slide_ >= 32 ? -1 : 0;
+                settle(delta, event.timestampMs);
+                return true;
+            }
+            return changed;
+        }
+        if (event.type == T::UP) {
+            swipeDown_ = false;
+            if (slide_) settle(0, event.timestampMs);
         }
     }
     switch (tap_.update(event, target)) {
     case OUTSIDE: return back();
-    case PREVIOUS: return moveSelection(-1);
-    case NEXT: return moveSelection(1);
+    case PREVIOUS: settle(-1, event.timestampMs); return true;
+    case NEXT: settle(1, event.timestampMs); return true;
     case ACTION:
         if (picking_) confirm();
         else openPicker();
         return true;
-    default: return false;
+    default: return settling();
     }
 }
 
@@ -314,6 +370,7 @@ void HomePhotoFrame::render(Canvas565& canvas) {
         // AMOLED redraws the room in the requested region before the overlay.
         canvas.multiplyRectRgb(0, 0, canvas.width(), canvas.height(), 122, 122, 122);
         drawOverlay(canvas, true, true);
+        layoutDirty_ = photosDirty_ = false;
         return;
     }
     const bool first = !backgroundReady_;
@@ -325,6 +382,7 @@ void HomePhotoFrame::render(Canvas565& canvas) {
         // The native canvas persists across presents. Keep one immutable copy
         // for clearing the side previews and recovering after a forced repaint.
         canvas.multiplyRectRgb(0, 0, PANEL, PANEL, 122, 122, 122);
+        FurnitureArt::drawFrame(canvas, PANEL/2, FRAME.y + FRAME.height/2, FRAME.width);
         std::memcpy(background_.data(), canvas.rawPixels(), PANEL * PANEL * sizeof(uint16_t));
         backgroundSwapped_ = canvas.byteSwapped();
         backgroundReady_ = true;
@@ -346,23 +404,22 @@ void HomePhotoFrame::render(Canvas565& canvas) {
     if (full) {
         if (!first) restore({0, 0, PANEL, PANEL});
     } else {
-        restore(LEFT);
-        restore(RIGHT);
+        restore({0, IMAGE.y, PANEL, IMAGE.height});
         if (layoutDirty_) {
             restore(BUTTON);
             restore(NOTICE);
         }
         const int top = layoutDirty_ ? NOTICE.y : IMAGE.y;
         const int bottom = layoutDirty_ ? BUTTON.y + BUTTON.height : IMAGE.y + IMAGE.height;
-        FrameDamage::restrictTo(LEFT.x, top, RIGHT.x + RIGHT.width - LEFT.x, bottom - top);
+        FrameDamage::restrictTo(0, top, PANEL, bottom - top);
     }
-    drawOverlay(canvas, full, full || layoutDirty_);
+    drawOverlay(canvas, false, full || layoutDirty_);
     layoutDirty_ = photosDirty_ = false;
 }
 
 void HomePhotoFrame::drawOverlay(Canvas565& canvas, bool drawFrame, bool drawControls) const {
     const int dx = roundPanel_ ? 0 : 4;
-    const int dy = roundPanel_ ? 0 : 44;
+    const int dy = roundPanel_ ? 0 : RECT_PANEL_Y;
     const auto offset = [dx, dy](Rect r) {
         r.x += dx;
         r.y += dy;
@@ -371,9 +428,12 @@ void HomePhotoFrame::drawOverlay(Canvas565& canvas, bool drawFrame, bool drawCon
     if (drawFrame)
         FurnitureArt::drawFrame(canvas, PANEL/2 + dx, FRAME.y + FRAME.height/2 + dy, FRAME.width);
     if (picking_) {
-        drawCandidate(canvas, pickerImage(selection_), offset(IMAGE));
-        if (selection_) drawNeighbor(canvas, pickerImage(selection_ - 1), offset(LEFT));
-        if (selection_ + 1 < library_.count()) drawNeighbor(canvas, pickerImage(selection_ + 1), offset(RIGHT));
+        for (unsigned i = 0; i < library_.count(); ++i) {
+            const int distance = (static_cast<int>(i) - static_cast<int>(selection_)) * CARD_STEP + slide_;
+            const Rect rect = offset(cardBounds(distance));
+            if (rect.x + rect.width <= canvas.clipLeft() || rect.x >= canvas.clipRight()) continue;
+            drawCard(canvas, pickerImage(i), rect, distance);
+        }
     } else {
         drawPhoto(canvas, image_.data(), Photos::WIDTH, offset(IMAGE));
     }

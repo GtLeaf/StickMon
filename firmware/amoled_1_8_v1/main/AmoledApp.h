@@ -636,6 +636,7 @@ private:
     mutable bool wallPhotoLoaded_ = false;
     TouchTap wallFrameTap_;
     bool wallFramePressed_ = false;
+    void requestFramePhotoRows();
     bool handleWallFrameTouch(const TouchEvent& event);
     uint32_t homeLibraryClockMs_=0;
     bool homeLibraryDirty_=false;

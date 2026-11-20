@@ -29,6 +29,7 @@ public:
     bool onBeforeSave() override;
     bool prepareDisplayLock() override;
     bool redrawOnStateChange() const override { return !homeUi.roomVisualFrozen(); }
+    uint32_t visualFrameIntervalMs(uint32_t nowMs) const override { return homeUi.visualFrameIntervalMs(nowMs); }
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;

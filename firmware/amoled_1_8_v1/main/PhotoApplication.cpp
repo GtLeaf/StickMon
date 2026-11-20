@@ -61,6 +61,11 @@ void AmoledApp::handlePhotoTouch(const TouchEvent& event){
     else if(photoFlow_.offset()!=oldOffset)requestRenderRows(80,448);
 }
 
+void AmoledApp::requestFramePhotoRows() {
+    constexpr int top = Ui::HomePhotoFrame::PHOTO_TOP + Ui::HomePhotoFrame::RECT_PANEL_Y;
+    requestRenderRows(top, top + Ui::HomePhotoFrame::PHOTO_HEIGHT);
+}
+
 bool AmoledApp::handleWallFrameTouch(const TouchEvent& event) {
     using Type = TouchTap::Type;
     if (sceneFlow.current() != AppSceneFlow::Scene::HOME) return false;
@@ -69,7 +74,10 @@ bool AmoledApp::handleWallFrameTouch(const TouchEvent& event) {
     const TouchTap::Event touch{type, event.x, event.y, event.timestampMs};
     if (homePhotoFrame_.active()) {
         if (displayLocked) cancelTouch();
-        else if (homePhotoFrame_.touch(touch)) requestFullRender();
+        else if (homePhotoFrame_.touch(touch)) {
+            if (homePhotoFrame_.photosOnly()) requestFramePhotoRows();
+            else requestFullRender();
+        }
         return true;
     }
 

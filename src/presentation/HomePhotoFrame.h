@@ -18,7 +18,12 @@ public:
     bool needsBackground() const { return !backgroundReady_; }
     bool back();
     bool touch(const TouchTap::Event& event);
-    void cancelTouch();
+    bool cancelTouch();
+    bool update(uint32_t nowMs);
+    bool sliding() const { return dragging_ || settleFrom_ != 0; }
+    bool settling() const { return settleFrom_ != 0; }
+    bool photosOnly() const { return active_ && picking_ && !layoutDirty_; }
+    static constexpr int PHOTO_TOP = 116, PHOTO_HEIGHT = 112, RECT_PANEL_Y = 44;
     void render(Canvas565& canvas);
     void drawWallPhoto(Canvas565& canvas, int x, int y, bool night, int scale = 1) const;
 
@@ -39,12 +44,14 @@ private:
     bool layoutDirty_ = false, photosDirty_ = false;
     const char* notice_ = nullptr;
     TouchTap tap_;
-    bool swipeDown_ = false;
+    bool swipeDown_ = false, dragging_ = false;
+    int slide_ = 0, dragOrigin_ = 0, settleFrom_ = 0;
+    uint32_t settleStart_ = 0;
     int swipeX_ = 0, swipeY_ = 0;
 
     void openPicker();
     void loadPreview();
-    bool moveSelection(int delta);
+    void settle(int delta, uint32_t nowMs);
     void confirm();
     void setNotice(Photos::Result result);
     void cacheWallPhoto(const uint16_t* pixels, int width);

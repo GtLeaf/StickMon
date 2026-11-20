@@ -17,6 +17,7 @@ public:
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     virtual bool roomVisualFrozen() const { return false; }
+    virtual void updateFrozenOverlay(uint32_t, RenderDemand&) {}
     virtual void closeTransientOverlay() {}
     bool onButton(const ButtonEvent& event) override;
     bool onTap(int target) override;

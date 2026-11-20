@@ -1230,7 +1230,7 @@ bool AmoledApp::brainSay(const char* text) {
 
 void AmoledApp::cancelTouch() {
     photoFlow_.cancelTouch();
-    homePhotoFrame_.cancelTouch();
+    if (homePhotoFrame_.cancelTouch()) requestFramePhotoRows();
     wallFrameTap_.cancel();
     wallFramePressed_ = false;
     marketUi_.cancel();
@@ -2963,6 +2963,8 @@ void AmoledApp::update(uint32_t nowMs) {
     }
     if (sceneFlow.current() != AppSceneFlow::Scene::HOME && homePhotoFrame_.active()) {
         homePhotoFrame_.close();
+    } else if (!displayLocked && !displayStandby_ && homePhotoFrame_.update(nowMs)) {
+        requestFramePhotoRows();
     }
     if(photoFlow_.active()){
         const auto scene = sceneFlow.current();

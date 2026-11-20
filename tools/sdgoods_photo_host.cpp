@@ -266,7 +266,8 @@ int main(int argc,char**argv){
         return pixels;
     };
     auto swipeLeft=[&](){
-        assert(!homeEvent(T::DOWN,246,174)&&!homeEvent(T::MOVE,120,174));
+        assert(!homeEvent(T::DOWN,246,174));
+        assert(homeEvent(T::MOVE,120,174));
         return homeEvent(T::UP,120,174);
     };
     auto binding=[&](){
@@ -314,15 +315,39 @@ int main(int argc,char**argv){
     assert(homeTap(180,299));homeRender(true);shot("frame-02-picker",home);
     const unsigned pickerReads=files.reads;
     const auto pickerBefore=snapshot();
-    homeEvent(T::DOWN,120,174);
-    assert(!homeEvent(T::UP,246,174)&&"The first photo must not wrap to the last one");
-    assert(swipeLeft());
+    homeEvent(T::DOWN,246,174);
+    assert(homeEvent(T::MOVE,182,174)&&"Cards should follow MOVE before release");
     homeRender(true);
-    assert(FrameDamage::partial&&FrameDamage::x==20&&FrameDamage::y==116&&
-        FrameDamage::width==320&&FrameDamage::height==112&&"Swiping only transfers the photographs");
+    const auto half=snapshot();
+    for (int x : {115,245}) {
+        // Both travelling cards now overlap the previously stationary wooden rails.
+        assert(half[172*360+x]!=pickerBefore[172*360+x]);
+    }
+    assert(half[172*360+308]!=pickerBefore[172*360+308]);
+    homeRender(false);assert(snapshot()==half);
+    shot("frame-half-drag",home);
+    homeEvent(T::MOVE,246,174);homeRender(true);assert(snapshot()==pickerBefore);
+    homeEvent(T::UP,246,174);
+    homeEvent(T::DOWN,120,174);homeEvent(T::UP,246,174);
+    desktop.advanceMs(200);home.update(desktop.millis(),.2f);homeRender(true);
+    assert(snapshot()==pickerBefore&&"Dragging past the first photo must spring back");
+    homeEvent(T::DOWN,246,174);
+    assert(homeEvent(T::MOVE,182,174));
+    homeRender(true);assert(snapshot()==half);
+    assert(homeEvent(T::UP,182,174));
+    homeRender(true);assert(snapshot()==half && "Releasing must preserve the visible positions");
+    desktop.advanceMs(48);
+    assert(home.update(desktop.millis(),.048f).redraw);
+    homeRender(true);const auto settling=snapshot();
+    assert(settling!=half && binding()==0);
+    desktop.advanceMs(200);home.update(desktop.millis(),.2f);
+    homeRender(true);
+    assert(FrameDamage::partial&&FrameDamage::y==116&&
+        FrameDamage::height==112&&"Swiping only transfers the photograph band");
     const auto pickerAfter=snapshot();
+    assert(pickerBefore!=pickerAfter && settling!=pickerAfter);
     for(int y=0;y<360;++y)for(int x=0;x<360;++x){
-        if(x<20||x>=340||y<116||y>=228)assert(pickerBefore[y*360+x]==pickerAfter[y*360+x]);
+        if(y<116||y>=228)assert(pickerBefore[y*360+x]==pickerAfter[y*360+x]);
     }
     homeRender(false);
     assert(snapshot()==pickerAfter&&"Partial redraw must agree with full composition");
