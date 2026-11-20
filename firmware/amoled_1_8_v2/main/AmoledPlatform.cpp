@@ -113,7 +113,9 @@ private:
 }  // namespace
 
 AmoledPlatform::AmoledPlatform()
-    : services_{*this, *this, *this, *this, *this, *this, *this, *this,
+    : photoFiles_(esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                  ESP_PARTITION_SUBTYPE_DATA_FAT, "photos") != nullptr),
+      services_{*this, *this, *this, *this, *this, *this, *this, *this,
                 *this, *this, *this, *this, &photoFiles_},
       mixer_(*this) {}
 

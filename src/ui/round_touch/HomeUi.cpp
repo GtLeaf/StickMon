@@ -136,7 +136,7 @@ bool HomeUi::onButton(const ButtonEvent& event) {
 void HomeUi::drawFloor(const HomeFrame& frame) {
     if (!(frame.placedFurniture & PHOTO_FRAME_MASK) || photoFrame_.active()) return;
     const auto b = wallFrameBounds(camera);
-    photoFrame_.drawWallPhoto(PixelRenderer::canvas(), b.x, b.y, frame.night);
+    photoFrame_.drawWallPhoto(PixelRenderer::canvas(), b.x, b.y);
 }
 
 void HomeUi::drawHud(const HomeFrame& frame) {

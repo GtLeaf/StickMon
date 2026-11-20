@@ -1,2 +1,4 @@
 # Keep the game, ESP-NOW and save system; remove only ESP-Claw remote chat.
 CONFIG_STICKMON_CLAW_ENABLE=n
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-lite.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions-lite.csv"

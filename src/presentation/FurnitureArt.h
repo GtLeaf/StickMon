@@ -5,7 +5,7 @@
 namespace FurnitureArt {
 inline constexpr int FRAME_WORLD_X = 193, FRAME_ART_Y = 54, FRAME_WORLD_SIZE = 21;
 
-inline uint16_t framePixel(int x,int y,bool night=false){
+inline uint16_t framePixel(int x,int y){
     if(x<0||x>=112||y<0||y>=112)return 0;
     int r=88,g=56,b=40;
     const auto set=[&](int nr,int ng,int nb){r=nr;g=ng;b=nb;};
@@ -19,7 +19,6 @@ inline uint16_t framePixel(int x,int y,bool night=false){
     if(x>=20&&x<92&&y>=20&&y<92)set(228,232,208);
     if(x>=25&&y>=25&&x+y<=71)set(244,244,224);
     if(x>=24&&x<88&&y>=24&&y<26)set(248,248,232);
-    if(night){r=r*3/5;g=g*3/5;b=b*3/5;}
     return PixelRenderer::rgb(uint8_t(r),uint8_t(g),uint8_t(b));
 }
 inline void drawFrame(Canvas565& c,int cx,int cy,int size=112){

@@ -85,7 +85,7 @@ fi
 
 # Existing build directories must adopt the room power-management settings too.
 if [[ -f "$SDKCONFIG" && "$1" != 1_75c ]]; then
-    python3 - "$SDKCONFIG" "$1" <<'PYCONFIG'
+    python3 - "$SDKCONFIG" "$1" "$PROFILE" <<'PYCONFIG'
 import re
 import sys
 from pathlib import Path
@@ -99,6 +99,10 @@ settings = {
 }
 if sys.argv[2] == "v2" and not re.search(r"(?m)^CONFIG_FATFS_LFN_STACK=y$", text):
     settings.update(CONFIG_FATFS_LFN_NONE="n", CONFIG_FATFS_LFN_HEAP="y")
+if sys.argv[2] == "v2":
+    partition_csv = "partitions-lite.csv" if sys.argv[3] == "lite" else "partitions.csv"
+    settings.update(CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=f'"{partition_csv}"',
+                    CONFIG_PARTITION_TABLE_FILENAME=f'"{partition_csv}"')
 for key, value in settings.items():
     line = key + "=" + value
     pattern = r"(?m)^(?:" + key + r"=.*|# " + key + r" is not set)$"

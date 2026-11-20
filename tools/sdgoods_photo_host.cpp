@@ -375,13 +375,12 @@ int main(int argc,char**argv){
     assert(library.loadThumbnail(chosen,restored.data())==Photos::Result::OK);
     const uint16_t wallSample=restored[22*Photos::THUMB_WIDTH+22];
     assert(canvas.readPixel(263,166)==wallSample);
+    const uint16_t frameEdge = canvas.readPixel(253, 154);
     const auto daytimeClock=engine.gameClock;
     engine.gameClock.set(desktop.millis(),19*60);
     homeRender(false);shot("frame-06-wall-night",home);
-    const auto eightyPercent=[](int value){return (4*value+2)/5;};
-    const uint16_t nightSample=(eightyPercent((wallSample>>11)&31)<<11) |
-        (eightyPercent((wallSample>>5)&63)<<5) | eightyPercent(wallSample&31);
-    assert(canvas.readPixel(263,166)==nightSample&&"Wall photo retains 80% channel brightness at night");
+    assert(canvas.readPixel(263,166)==wallSample&&"Wall photo must keep its original colors at night");
+    assert(canvas.readPixel(253,154)==frameEdge&&"Frame edge must keep its original colors at night");
     engine.gameClock=daytimeClock;
     assert(home.update(desktop.millis(),.066f).redraw&&
         home.progressionModal==MainScene::ProgressionModal::LEVEL_UP);

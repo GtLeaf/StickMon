@@ -67,6 +67,81 @@ void unavailableRoomProjectsWithoutTheHeaderAndResetsCamera() {
     assert(other.cameraX() == 216 && other.cameraY() == 112);
 }
 
+void manualPanClampsHoldsAndEasesBack() {
+    // The production room: 240 logical px wide, 184 visible on AMOLED.
+    const Presenter::RoomLayout room{true, 240, 161, 0};
+    Presenter presenter;
+    presenter.updateCamera(room, 70, 100);
+    assert(presenter.cameraX() == 0 && presenter.canPan(room));
+    assert(!presenter.panBy(room, 30) && "a pan needs an active drag");
+    presenter.beginPan();
+    assert(presenter.panBy(room, 30) && presenter.cameraX() == 30);
+    assert(presenter.panBy(room, 100) && presenter.cameraX() == 56);
+    closeTo(presenter.panOffset(), 56);  // no invisible overshoot
+    assert(presenter.panBy(room, -6.5f) && presenter.cameraX() == 50);
+    assert(!presenter.panBy(room, 0.25f) && presenter.cameraX() == 50);
+    // Held finger never returns, even for story events.
+    assert(!presenter.updatePan(room, 900000, 70, true) && presenter.cameraX() == 50);
+    presenter.endPan(1000, 70);
+    // Follow updates keep the manual offset on top of the follow camera.
+    presenter.updateCamera(room, 70, 100);
+    assert(presenter.cameraX() == 50);
+    assert(!presenter.updatePan(room, 1000 + Presenter::PAN_IDLE_RETURN_MS - 1, 70, false));
+    assert(presenter.cameraX() == 50 && !presenter.panReturning());
+    const uint32_t start = 1000 + Presenter::PAN_IDLE_RETURN_MS;
+    assert(!presenter.updatePan(room, start, 70, false) && presenter.panReturning());
+    assert(presenter.updatePan(room, start + Presenter::PAN_RETURN_MS / 2, 70, false));
+    assert(presenter.cameraX() > 0 && presenter.cameraX() < 50);
+    assert(presenter.updatePan(room, start + Presenter::PAN_RETURN_MS, 70, false));
+    assert(presenter.cameraX() == 0 && presenter.panOffset() == 0 && !presenter.panReturning());
+    assert(!presenter.updatePan(room, start + 99999, 70, true));
+
+    // A resting actor may be looked away from; walking off-view returns.
+    presenter.beginPan();
+    presenter.panBy(room, 56);
+    presenter.endPan(20000, 62);
+    presenter.updateCamera(room, 62, 100);  // screen x 6: deliberately looked away
+    assert(!presenter.updatePan(room, 21000, 62, false) && presenter.cameraX() == 56);
+    presenter.updateCamera(room, 73, 100);  // moved, but comfortably visible
+    assert(!presenter.updatePan(room, 21100, 73, false) && !presenter.panReturning());
+    presenter.updateCamera(room, 66, 100);  // walked back toward the left edge
+    presenter.updatePan(room, 21200, 66, false);
+    assert(presenter.panReturning());
+    assert(presenter.updatePan(room, 21200 + Presenter::PAN_RETURN_MS, 66, false));
+    assert(presenter.cameraX() == 0);
+
+    // Story events force the return; leaving the room snaps immediately.
+    presenter.beginPan();
+    presenter.panBy(room, 40);
+    presenter.endPan(30000, 70);
+    presenter.updatePan(room, 30010, 70, true);
+    assert(presenter.panReturning());
+    presenter.beginPan();  // a new drag interrupts the return
+    assert(!presenter.panReturning());
+    presenter.panBy(room, 10);
+    presenter.endPan(30020, 70);
+    assert(presenter.cameraX() > 0 && presenter.clearPan(room));
+    assert(presenter.cameraX() == 0 && !presenter.clearPan(room));
+
+    // Follow at the right edge: only looking left is possible.
+    presenter.updateCamera(room, 230, 100);
+    assert(presenter.cameraX() == 56);
+    presenter.beginPan();
+    assert(!presenter.panBy(room, 10) && presenter.cameraX() == 56);
+    assert(presenter.panBy(room, -30) && presenter.cameraX() == 26);
+    presenter.endPan(40000, 230);
+    presenter.clearPan(room);
+
+    // A room that fits the screen and a missing room cannot pan.
+    const Presenter::RoomLayout narrow{true, 100, 100, 17};
+    Presenter fixed;
+    fixed.updateCamera(narrow, 50, 50);
+    assert(!fixed.canPan(narrow));
+    fixed.beginPan();
+    assert(!fixed.panBy(narrow, 20) && fixed.cameraX() == 0);
+    assert(!fixed.canPan(Presenter::RoomLayout{}));
+}
+
 void sleepSelectsTheTallestThenWidestVisibleFrame() {
     Presenter presenter;
     struct Case { uint16_t species; uint8_t expanded; };
@@ -119,6 +194,7 @@ int main(int argc, char** argv) {
     GameRandom::seed(1234);
     cameraKeepsTheSafeAreaAndRoundsBeforeClamping();
     unavailableRoomProjectsWithoutTheHeaderAndResetsCamera();
+    manualPanClampsHoldsAndEasesBack();
     sleepSelectsTheTallestThenWidestVisibleFrame();
     sleepWrapRestartAndIndependentInstancesKeepTheirOwnPhase();
     assert(GameRandom::next() == 332584831u);

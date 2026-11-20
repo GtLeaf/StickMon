@@ -82,9 +82,18 @@ bool layoutHealthy() {
     auto b = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, nullptr);
     auto data = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_OTA, nullptr);
     auto resources = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "resources");
-    return a && b && data && resources && a->address == 0x20000 && a->size == 0x300000 &&
-           b->address == 0x320000 && b->size == 0x300000 && data->address == 0xf000 &&
-           data->size == 0x2000 && resources->address == 0x620000 && resources->size == 0x400000;
+    if (!a || !b || !data || !resources || a->address != 0x20000 || a->size != 0x300000 ||
+        b->address != 0x320000 || b->size != 0x300000 || data->address != 0xf000 ||
+        data->size != 0x2000 || resources->address != 0x620000) return false;
+    if (resources->size == 0x400000) return true;
+#if !STICKMON_HAS_CLAW
+    const auto* photos = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "photos");
+    return resources->size == 0x900000 && photos &&
+           photos->address == 0xf20000 && photos->size == 0xd0000;
+#else
+    return false;
+#endif
 }
 bool resourcesHealthy() {
     if (!layoutHealthy() || !ResourceFS::ins().begin()) return false;

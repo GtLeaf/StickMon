@@ -13,7 +13,7 @@ using wl_handle_t=int;constexpr int WL_INVALID_HANDLE=-1;
 extern std::atomic<int> liveHandles;
 inline int wl_unmount(wl_handle_t handle){if(handle!=0||liveHandles!=1)return -1;--liveHandles;return 0;}
 ''')
-    (base/'esp_log.h').write_text('#pragma once\n#define ESP_LOGE(...) ((void)0)\n')
+    (base/'esp_log.h').write_text('#pragma once\n#define ESP_LOGE(...) ((void)0)\n#define ESP_LOGI(...) ((void)0)\n')
     (base/'esp_partition.h').write_text('''#pragma once
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +22,11 @@ constexpr int ESP_OK=0,ESP_FAIL=-1,ESP_ERR_INVALID_STATE=2;
 constexpr int ESP_PARTITION_TYPE_DATA=1,ESP_PARTITION_SUBTYPE_DATA_FAT=2;
 struct esp_partition_t {size_t size;};
 extern int scenario;
-inline const esp_partition_t* esp_partition_find_first(int,int,const char*){static esp_partition_t part{8197};return scenario==4?nullptr:&part;}
+inline const esp_partition_t* esp_partition_find_first(int,int,const char* label){
+    static esp_partition_t part{8197};
+    const char* expected=scenario==8?"photos":"brainfs";
+    return scenario==4||std::strcmp(label,expected)!=0?nullptr:&part;
+}
 inline int esp_partition_read(const esp_partition_t*,size_t offset,void*out,size_t n){
  if(scenario==2)return ESP_FAIL;
  std::memset(out,255,n);
@@ -38,7 +42,8 @@ inline int esp_partition_read(const esp_partition_t*,size_t offset,void*out,size
 #include <thread>
 extern std::atomic<int> mountCalls,formats;
 struct esp_vfs_fat_mount_config_t {bool format_if_mount_failed=false;int max_files=0;size_t allocation_unit_size=0;};
-inline int esp_vfs_fat_spiflash_mount_rw_wl(const char*,const char*,const esp_vfs_fat_mount_config_t*c,wl_handle_t* handle){
+inline int esp_vfs_fat_spiflash_mount_rw_wl(const char* path,const char* label,const esp_vfs_fat_mount_config_t*c,wl_handle_t* handle){
+ if(scenario==8&&(std::strcmp(path,"/photo")||std::strcmp(label,"photos")))return ESP_FAIL;
  const int call=++mountCalls;
  if(scenario==7&&call==1){
    const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(500);
@@ -56,4 +61,4 @@ inline int esp_vfs_fat_spiflash_mount_rw_wl(const char*,const char*,const esp_vf
 ''')
     binary=base/'volume'
     subprocess.run(['c++','-std=c++17','-Wall','-Wextra','-Werror','-pthread','-Isrc','-I'+directory,'tools/photo_volume_host.cpp','-o',str(binary)],cwd=ROOT,check=True)
-    for scenario in [0,1,2,3,4,6,7]:subprocess.run([str(binary),str(scenario)],check=True)
+    for scenario in [0,1,2,3,4,6,7,8]:subprocess.run([str(binary),str(scenario)],check=True)
