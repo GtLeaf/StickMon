@@ -131,7 +131,7 @@ bool prepare(bool night,uint16_t placedFurniture) {
         for(int row=0;row<size;++row)for(int col=0;col<size;++col){
             const int px=x+col,py=y+row+col/3;
             if(px>=0&&px<room.artWidth()&&py>=0&&py<room.artHeight())
-                roomBuffer[py*room.artWidth()+px]=FurnitureArt::framePixel(col*112/size,row*112/size,night);
+                roomBuffer[py*room.artWidth()+px]=FurnitureArt::framePixel(col*112/size,row*112/size);
         }
     }
     roomBufferFurniture=placedFurniture;

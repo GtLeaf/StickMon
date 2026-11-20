@@ -10,7 +10,8 @@ from amoled_source import amoled_runtime_sources
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def build_amoled_host(output: Path, host_sources: list[str | Path], debug: bool = False) -> Path:
+def build_amoled_host(output: Path, host_sources: list[str | Path], debug: bool = False,
+                      extra_flags: list[str] | None = None) -> Path:
     """Callers provide only their probes; production sources come from manifests."""
     output = Path(output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -26,11 +27,12 @@ def build_amoled_host(output: Path, host_sources: list[str | Path], debug: bool 
         for index, source in enumerate(sources):
             if source.suffix == ".c":
                 obj = temporary / f"portable-{index}.o"
-                subprocess.run(["cc", "-O1", "-c", str(source), "-o", str(obj)],
+                subprocess.run(["cc", "-O1", *(extra_flags or []), "-c", str(source), "-o", str(obj)],
                                cwd=ROOT, check=True)
                 objects.append(str(obj))
         subprocess.run([
-            "c++", "-std=c++17", "-O1", "-ffunction-sections", "-fdata-sections",
+            "c++", "-std=c++17", "-O1", *(extra_flags or []),
+            "-ffunction-sections", "-fdata-sections",
             "-Wl,-dead_strip" if sys.platform == "darwin" else "-Wl,--gc-sections",
             "-Isrc", "-Ifirmware/amoled_1_8_v1/main", "-I" + directory,
             "-DSTICKMON_HAS_CLAW=0", f"-DSTICKMON_ENABLE_DEBUG_FEATURES={int(debug)}",

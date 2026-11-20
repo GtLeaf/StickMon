@@ -269,6 +269,8 @@ struct ExploreSerialCommand {
                         lockPower.report();
                     } else if (std::strcmp(line, "diag status") == 0) {
                         app.debugReportSaveState();
+                    } else if (std::strcmp(line, "diag photo") == 0) {
+                        app.debugReportPhotoState();
                     } else if (std::strcmp(line, "diag frame") == 0) {
                         captureFrame();
                     } else if (std::strncmp(line, "diag battle ", 12) == 0) {

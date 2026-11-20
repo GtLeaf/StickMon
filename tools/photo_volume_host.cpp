@@ -8,6 +8,12 @@ int scenario=0;
 std::atomic<int> mountCalls{0},formats{0},liveHandles{0};
 int main(int argc,char**argv){
     assert(argc==2);scenario=std::atoi(argv[1]);
+    if (scenario == 8) {
+        assert(Stickmon::mountPhotoVolume() && Stickmon::mountPhotoVolume());
+        assert(mountCalls == 1 && formats == 1 && liveHandles == 1);
+        std::puts("Dedicated photo volume initialized and reused");
+        return 0;
+    }
     if(scenario==7){
         bool firstResult=false;
         std::thread first([&]{firstResult=Stickmon::mountPlayerVolume();});

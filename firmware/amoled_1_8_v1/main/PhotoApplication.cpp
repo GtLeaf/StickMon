@@ -1,4 +1,5 @@
 #include "AmoledApp.h"
+#include <cstdlib>
 #include "core/UiStrings.h"
 #include "core/RoomResource.h"
 #include "game/HomeFurnitureService.h"
@@ -7,6 +8,22 @@
 #include "ui/ExploreScreens.h"
 
 namespace AmoledV1 {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+void AmoledApp::debugReportPhotoState() const {
+    const auto count = photoFlow_.count();
+    const auto* pixels = photoFlow_.image();
+    uint32_t hash = 2166136261u;
+    if (pixels) {
+        for (size_t i = 0; i < Photos::PIXELS; ++i)
+            hash = (hash ^ pixels[i]) * 16777619u;
+    }
+    Platform::logf("[PhotoDiag] scene=%u page=%u count=%u newest=%llu image=%08lx error=%s\n",
+                   unsigned(sceneFlow.current()), unsigned(photoFlow_.page()), count,
+                   count ? static_cast<unsigned long long>(photoFlow_.entry(0).id) : 0ull,
+                   static_cast<unsigned long>(pixels ? hash : 0ul),
+                   photoFlow_.error() ? photoFlow_.error() : "none");
+}
+#endif
 void AmoledApp::openPhotoCamera(uint32_t nowMs){
     if (market_ && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
         if (!marketMenuAvailable()) return;
@@ -96,9 +113,25 @@ bool AmoledApp::handleWallFrameTouch(const TouchEvent& event) {
         ;
     if (type == Type::DOWN) {
         wallFramePressed_ = hit;
-        if (hit) pointerDown = dragging = false;
+        if (hit) {
+            pointerDown = dragging = false;
+            touchStartX = touchLastX = event.x;
+            touchStartY = touchLastY = event.y;
+            homePanCandidate_ = homePanAllowed(event.y);
+        }
     }
     if (!wallFramePressed_) return false;
+    // A sideways drag that starts on the frame looks around the room
+    // instead; hand the gesture to the shared home pan path.
+    if (type == Type::MOVE && homePanCandidate_ &&
+        std::abs(event.x - touchStartX) > 10 &&
+        std::abs(event.x - touchStartX) > std::abs(event.y - touchStartY)) {
+        wallFrameTap_.cancel();
+        wallFramePressed_ = false;
+        pointerDown = true;
+        dragging = false;
+        return false;
+    }
     const bool activate = wallFrameTap_.update(touch, hit ? 0 : -1) == 0;
     if (type == Type::UP) wallFramePressed_ = false;
     if (activate) {

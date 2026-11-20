@@ -66,6 +66,9 @@ void playMarketFeedback(StallUi& ui) {
 
 constexpr int TAP_SLOP = 12;
 constexpr int DRAG_START_SLOP = 6;
+// Sideways travel before a room press becomes a look-around drag. Matches the
+// wall frame tap radius so a pan never also opens the frame.
+constexpr int HOME_PAN_START_SLOP = 10;
 constexpr int MENU_HEADER_HEIGHT = 56;
 constexpr int MARKET_MENU_X = UiMetrics::HOME_LOCK_BUTTON_X;
 constexpr AmoledUi::Rect MARKET_MENU_HIT{
@@ -1245,6 +1248,11 @@ void AmoledApp::cancelTouch() {
     if (market_) market_->setDirection(-1);
     // Losing pointer capture must not turn a cancelled gesture into a tap.
     pointerDown = dragging = false;
+    // A cancelled look-around keeps its view and returns on the idle timer.
+    if (homePresenter_.panning()) {
+        homePresenter_.endPan(Platform::clock().millis(), homeMainActor.x);
+    }
+    homePanCandidate_ = false;
     pressedMenuItem = pressedExploreArea = -1;
     exploreDragStartArea = pressedExploreMenuItem = -1;
     inventoryController_.cancelTouch();
@@ -1434,6 +1442,9 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         touchStartX = event.x;
         touchStartY = event.y;
         touchLastY = event.y;
+        touchLastX = event.x;
+        homePanCandidate_ = sceneFlow.current() == AppSceneFlow::Scene::HOME &&
+            homePanAllowed(event.y);
         menuVelocity = 0.0f;
         if (sceneFlow.current() == AppSceneFlow::Scene::MAIN_MENU) {
             pressedMenuItem = mainMenuItemAt(event.x, event.y, menuScroll);
@@ -1574,7 +1585,28 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
 
     case TouchEventType::MOVE:
         if (!pointerDown) break;
-        if (sceneFlow.current() == AppSceneFlow::Scene::SHOWER) {
+        if (sceneFlow.current() == AppSceneFlow::Scene::HOME) {
+            if (homePanCandidate_ && !homePresenter_.panning()) {
+                const int dx = event.x - touchStartX;
+                const int dy = event.y - touchStartY;
+                if (std::abs(dx) > HOME_PAN_START_SLOP && std::abs(dx) > std::abs(dy)) {
+                    homePresenter_.beginPan();
+                    dragging = true;
+                    // Only travel beyond the slop moves the camera, so the
+                    // room does not jump when the drag is recognised.
+                    touchLastX = static_cast<int16_t>(
+                        touchStartX + (dx > 0 ? HOME_PAN_START_SLOP : -HOME_PAN_START_SLOP));
+                } else if (std::abs(dy) > HOME_PAN_START_SLOP) {
+                    homePanCandidate_ = false;
+                }
+            }
+            if (homePresenter_.panning() &&
+                homePresenter_.panBy(homePresenterLayout(),
+                    -static_cast<float>(event.x - touchLastX) / AmoledUi::RESOURCE_SCALE)) {
+                // Presented by update() so a MOVE stream cannot starve audio.
+                homePanDirty_ = true;
+            }
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::SHOWER) {
             if (showerController_.state().showerToolDragging) {
                 updateShowerToolDrag(event.x, event.y, event.timestampMs);
             } else if (std::max(std::abs(event.x - touchStartX),
@@ -1808,6 +1840,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             }
         }
         touchLastY = event.y;
+        touchLastX = event.x;
         break;
 
     case TouchEventType::UP: {
@@ -1912,6 +1945,10 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         }
         pointerDown = false;
         dragging = false;
+        if (homePresenter_.panning()) {
+            homePresenter_.endPan(event.timestampMs, homeMainActor.x);
+        }
+        homePanCandidate_ = false;
         pressedMenuItem = -1;
 #if STICKMON_ENABLE_DEBUG_FEATURES
         debugPressedItem = -1;
@@ -3254,6 +3291,7 @@ void AmoledApp::update(uint32_t nowMs) {
         startPendingCareProgression(nowMs);
         updateExploreRoute(nowMs);
     }
+    updateHomePan(nowMs);
     bool exploreAreaAnimating = false;
     bool explorePreviewMoving = false;
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
@@ -6577,6 +6615,38 @@ HomePresenter::RoomLayout AmoledApp::homePresenterLayout() const {
 
 void AmoledApp::updateCamera() {
     homePresenter_.updateCamera(homePresenterLayout(), homeMainActor.x, homeMainActor.y);
+}
+
+bool AmoledApp::homePanAllowed(int y) const {
+    return sceneFlow.current() == AppSceneFlow::Scene::HOME && !displayLocked &&
+        gameState.oobeDone && y >= HOME_ROOM_TOP && y < HOME_STATUS_TOP &&
+        homePresenter_.canPan(homePresenterLayout()) &&
+        !homePhotoFrame_.active() && !visitRecallConfirm &&
+        visitAwayFlow_.state().phase == VisitDeparture::NONE &&
+        !exploreTransition_.state().pending &&
+        exploreTransition_.state().phase == ExpeditionDeparturePhase::NONE
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        && !debugContactPending && !debugContactEventPending
+#endif
+        ;
+}
+
+void AmoledApp::updateHomePan(uint32_t nowMs) {
+    const auto layout = homePresenterLayout();
+    bool changed = false;
+    if (sceneFlow.current() != AppSceneFlow::Scene::HOME || displayLocked) {
+        // Leaving the visible room drops the look-around immediately.
+        homePanCandidate_ = false;
+        changed = homePresenter_.clearPan(layout);
+    } else {
+        const bool forceReturn = exploreTransition_.state().pending ||
+            exploreTransition_.state().phase != ExpeditionDeparturePhase::NONE ||
+            visitAwayFlow_.state().phase != VisitDeparture::NONE ||
+            homeRuntime.pairActive();
+        changed = homePresenter_.updatePan(layout, nowMs, homeMainActor.x, forceReturn);
+    }
+    if (changed || homePanDirty_) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+    homePanDirty_ = false;
 }
 
 int AmoledApp::worldToScreenX(float worldX) const {

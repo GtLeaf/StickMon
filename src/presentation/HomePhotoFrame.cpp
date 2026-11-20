@@ -400,29 +400,23 @@ void HomePhotoFrame::cacheWallPhoto(const uint16_t* pixels, int width) {
     auto sample = [scale](int value) {
         return (value * Photos::THUMB_WIDTH / WALL_PHOTO_SIZE) * scale + scale / 2;
     };
-    auto nightChannel = [](int value) { return (4 * value + 2) / 5; };
     for (int row = 0; row < WALL_PHOTO_SIZE; ++row) {
         const uint16_t* source = pixels + sample(row) * width;
         for (int col = 0; col < WALL_PHOTO_SIZE; ++col) {
             const int index = row * WALL_PHOTO_SIZE + col;
-            const uint16_t pixel = source[sample(col)];
-            wallPhoto_[0][index] = pixel;
-            wallPhoto_[1][index] = (nightChannel((pixel >> 11) & 31) << 11) |
-                                  (nightChannel((pixel >> 5) & 63) << 5) |
-                                  nightChannel(pixel & 31);
+            wallPhoto_[index] = source[sample(col)];
         }
     }
     wallPhotoValid_ = true;
 }
 
-void HomePhotoFrame::drawWallPhoto(Canvas565& canvas, int x, int y, bool night, int scale) const {
+void HomePhotoFrame::drawWallPhoto(Canvas565& canvas, int x, int y, int scale) const {
     if (!wallPhotoValid_) return;
     constexpr int inset = (FurnitureArt::FRAME_WORLD_SIZE - WALL_PHOTO_SIZE) / 2;
-    const auto* pixels = wallPhoto_[night];
     for (int row = 0; row < WALL_PHOTO_SIZE; ++row) {
         for (int col = 0; col < WALL_PHOTO_SIZE; ++col) {
             const int frameX = (inset + col) * scale;
-            const uint16_t pixel = pixels[row * WALL_PHOTO_SIZE + col];
+            const uint16_t pixel = wallPhoto_[row * WALL_PHOTO_SIZE + col];
             for (int dx = 0; dx < scale; ++dx) {
                 const int column = frameX + dx;
                 canvas.drawFastVLine(x + column, y + (inset + row) * scale + column/3, scale, pixel);

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Actual360px round engine and Kecleon transactions; no OSTB/V1 target builds."""
-import argparse,hashlib,json,os,re,subprocess
+import argparse,hashlib,json,os,re,subprocess,sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -33,7 +33,8 @@ def build(out,external=False,sanitize=False,extra_flags=(),debug=True,host_sourc
         return target
     with ThreadPoolExecutor(max_workers=3) as pool:
         compiled=list(pool.map(compile_one,sources))
-    subprocess.run(['c++','-Wl,--gc-sections',*(['-fsanitize=address,undefined'] if sanitize else []),*[str(p) for p in compiled],str(obj),'-o',str(binary)],cwd=ROOT,check=True)
+    strip_unused = '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections'
+    subprocess.run(['c++',strip_unused,*(['-fsanitize=address,undefined'] if sanitize else []),*[str(p) for p in compiled],str(obj),'-o',str(binary)],cwd=ROOT,check=True)
     return binary
 
 def main():

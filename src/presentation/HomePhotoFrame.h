@@ -20,14 +20,14 @@ public:
     bool touch(const TouchTap::Event& event);
     void cancelTouch();
     void render(Canvas565& canvas);
-    void drawWallPhoto(Canvas565& canvas, int x, int y, bool night, int scale = 1) const;
+    void drawWallPhoto(Canvas565& canvas, int x, int y, int scale = 1) const;
 
 private:
     static constexpr int WALL_PHOTO_SIZE = 13;
     bool roundPanel_;
     Photos::Library library_;
     Photos::PixelBuffer background_, image_, pickerImages_;
-    uint16_t wallPhoto_[2][WALL_PHOTO_SIZE * WALL_PHOTO_SIZE] = {};
+    uint16_t wallPhoto_[WALL_PHOTO_SIZE * WALL_PHOTO_SIZE] = {};
     uint64_t binding_ = 0, imageId_ = 0;
     unsigned selection_ = 0;
     bool validPickerImage_[Photos::CAPACITY] = {};

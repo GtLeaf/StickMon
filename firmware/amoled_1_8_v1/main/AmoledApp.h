@@ -147,6 +147,7 @@ public:
     void renderDebugTouchOverlay(Canvas565& canvas) const;
     bool debugStartExplore(uint8_t area);
     void debugReportSaveState();
+    void debugReportPhotoState() const;
     void debugReportHomeState() const;
     bool debugBattleScenario(uint8_t scenario, uint32_t nowMs);
     bool debugStartShowerDrag(uint8_t tool, uint32_t nowMs);
@@ -636,6 +637,13 @@ private:
     mutable bool wallPhotoLoaded_ = false;
     TouchTap wallFrameTap_;
     bool wallFramePressed_ = false;
+    // Horizontal room look-around. The candidate owns nothing until the
+    // finger travels sideways; taps keep their existing targets.
+    bool homePanCandidate_ = false;
+    bool homePanDirty_ = false;
+    int16_t touchLastX = 0;
+    bool homePanAllowed(int y) const;
+    void updateHomePan(uint32_t nowMs);
     bool handleWallFrameTouch(const TouchEvent& event);
     uint32_t homeLibraryClockMs_=0;
     bool homeLibraryDirty_=false;

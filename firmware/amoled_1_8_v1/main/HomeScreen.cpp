@@ -761,7 +761,7 @@ void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
         if (roomDrawn) {
             if (model.wallPhoto && (model.placedFurniture & 1u)) {
                 const auto frame = homeWallFrameBounds(model.cameraX, model.cameraY);
-                model.wallPhoto->drawWallPhoto(canvas, frame.x, frame.y, model.night,
+                model.wallPhoto->drawWallPhoto(canvas, frame.x, frame.y,
                                                 AmoledUi::RESOURCE_SCALE);
             }
             if (model.bowlFilled) {
