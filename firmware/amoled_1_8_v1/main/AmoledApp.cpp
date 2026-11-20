@@ -2245,9 +2245,8 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             requestRenderRows(HOME_HEADER_HEIGHT, 448);
             return;
         }
-        if (exploreRouteBagAt(x, y)) {
-            pauseExploreRoute(nowMs);
-            openItemScene(AppSceneFlow::Scene::BAG);
+        if (exploreRouteCameraAt(x, y)) {
+            openPhotoCamera(nowMs);
             return;
         }
         if (exploreRouteMenuAt(x, y)) {

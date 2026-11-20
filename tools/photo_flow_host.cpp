@@ -128,5 +128,23 @@ int main(int argc,char**argv){
     tap(f,f.thumbBounds(0));assert(f.page()==Flow::Page::DETAIL);
     f.close();assert(!f.active()&&!f.image());f.openCamera(2,1);assert(f.frameX()==68&&f.frameY()==68);
     Flow rectangular;checkResize(rectangular);
+    auto zoomTap = [&](int x,int y){
+        event(rectangular,T::DOWN,x,y);
+        assert(event(rectangular,T::UP,x,y)==Flow::Request::NONE && rectangular.viewfinder());
+    };
+    // Corners of the invisible +/- hit regions work, including outside the glyph.
+    zoomTap(248,368);
+    assert(rectangular.frameSize()==208 && rectangular.frameX()==80 && rectangular.frameY()==68);
+    zoomTap(303,423);
+    assert(rectangular.frameSize()==192);
+    zoomTap(304,423);
+    event(rectangular,T::DOWN,276,396);event(rectangular,T::CANCEL,276,396);
+    event(rectangular,T::UP,276,396);
+    event(rectangular,T::DOWN,276,396);event(rectangular,T::UP,184,396);
+    assert(rectangular.frameSize()==192 && rectangular.viewfinder());
+    for(int i=0;i<4;++i)zoomTap(276,396);
+    assert(rectangular.frameSize()==160);
+    for(int i=0;i<7;++i)zoomTap(64,368);
+    assert(rectangular.frameSize()==240 && rectangular.frameX()==64 && rectangular.frameY()==52);
     std::puts("photo flow: round geometry, exhaustive crop corners, offset/threshold/cancel/coalescing, runtime capture, retake/reopen, five real-file photos, album swipe/delete/scroll OK");
 }

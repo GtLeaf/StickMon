@@ -18,6 +18,11 @@ void label(Canvas565& c,const char*s,int x,int y,int width,int size=32,uint16_t 
 }
 void back(Canvas565& c,int y=36){c.fillCircle(36,y,22,UiCommon::rgb(27,43,51));for(int n=-1;n<=1;++n){c.drawLine(40+n,y-8,32+n,y,ink());c.drawLine(32+n,y,40+n,y+8,ink());}}
 void button(Canvas565& c,const char*s,int x,int y,int width,bool primary=false){c.fillRoundRect(x,y,width,44,10,primary?UiCommon::rgb(42,73,70):UiCommon::rgb(24,34,42));label(c,s,x,y+6,width);}
+void zoomSymbol(Canvas565& c,PhotoSession::Rect bounds,bool plus){
+    const int x=bounds.x+bounds.width/2, y=bounds.y+bounds.height/2;
+    c.fillRoundRect(x-11,y-2,22,4,2,ink());
+    if(plus)c.fillRoundRect(x-2,y-11,4,22,2,ink());
+}
 void image(Canvas565& c,const uint16_t*p,int x,int y,int size,int source){
     if(!p){c.fillRoundRect(x,y,size,size,8,UiCommon::rgb(24,34,42));label(c,Ui::Photo::CORRUPT,x,y+size/2-8,size,16,muted());return;}
     const int top=std::max(y,c.clipTop()),bottom=std::min(y+size,c.clipBottom()),left=std::max(x,c.clipLeft()),right=std::min(x+size,c.clipRight());
@@ -49,6 +54,8 @@ void renderPhotoScreen(Canvas565& c,const PhotoSession& flow,uint16_t top,uint16
         Ui::drawPhotoCropMarks(c,flow,19,ink());
         back(c,28);c.fillRoundRect(278,10,78,36,12,UiCommon::rgb(27,43,51));std::snprintf(count,sizeof(count),"%u/%u",flow.count(),Photos::CAPACITY);label(c,count,278,12,78);
         c.drawCircle(184,396,29,ink());c.drawCircle(184,396,28,ink());c.fillCircle(184,396,22,ink());
+        zoomSymbol(c,PhotoSession::ZOOM_OUT_BOUNDS,false);
+        zoomSymbol(c,PhotoSession::ZOOM_IN_BOUNDS,true);
     }else{
         c.fillRect(0,0,368,448,0);back(c);
         if(page==P::PREVIEW){label(c,Ui::Photo::PREVIEW,84,20,200);image(c,flow.image(),24,72,320,Photos::WIDTH);button(c,Ui::Photo::RETAKE,24,400,152);button(c,Ui::Photo::SAVE,192,400,152,true);}

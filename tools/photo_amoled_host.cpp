@@ -71,9 +71,7 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     const auto before=app.exploreRouteModel();const auto fingerprint=ExploreMapGenerator::fingerprint(*before.map);
     shot("01-entry");
     tap(44,396);
-    assert(app.sceneFlow.current()==S::BAG&&!app.photoFlow_.active());
-    app.closeItemScene();assert(app.sceneFlow.current()==S::EXPLORE_ROUTE);
-    openCamera();
+    assert(app.sceneFlow.current()==S::EXPLORE_ROUTE && app.photoFlow_.viewfinder());
     assert(app.photoFlow_.page()==P::VIEWFINDER&&app.exploreSession_.state().exploreRoutePaused);
     app.gameState.settings.idleTimeoutIndex=0;
     event(TouchEventType::DOWN,36,28);
@@ -97,7 +95,8 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     assert(app.lastCareMs==careTime&&app.gameState.gameMinutesTotal==gameMinutes&&
            "An old interaction with idle timeout disabled must not rewind the update clock");
     app.gameState.settings.idleTimeoutIndex=0;
-    openCamera();
+    tap(44,396);
+    assert(app.photoFlow_.viewfinder());
     shot("02-viewfinder");bands();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
     event(TouchEventType::DOWN,184,396);app.cancelTouch();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
     desktop.sleepMs(31000);app.update(desktop.millis());assert(!app.consumeLockRequest());
@@ -110,6 +109,15 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
         assert(canvas.readPixel(x+size-11,y+size-5)==ink&&"Expected resize grip");
     };
     frameAt(72,60);shot("14-frame-centered");
+    const auto symbolInk=UiCommon::rgb(226,238,233);
+    auto& canvas=PixelRenderer::canvas();
+    for(int x : {92,276}){
+        assert(canvas.readPixel(x-8,396)==symbolInk);
+        assert(canvas.readPixel(x+8,388)==0);
+    }
+    assert(canvas.readPixel(92,388)==0 && canvas.readPixel(276,388)==symbolInk);
+    tap(276,396);frameAt(80,68,false,208);
+    tap(92,396);frameAt(72,60,false);
     // Sub-threshold jitter and a gesture starting outside the crop do nothing.
     event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,189,177);event(TouchEventType::UP,189,177);frameAt(72,60);
     event(TouchEventType::DOWN,20,172);event(TouchEventType::MOVE,120,220);event(TouchEventType::UP,120,220);frameAt(72,60);
@@ -145,8 +153,9 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,184,396);event(TouchEventType::UP,184,396);
     assert(app.photoFlow_.viewfinder());frameAt(144,120);shot("16-frame-lower-right");bands();
     // Drag the corner from inside the frame, then photograph the smaller crop.
-    event(TouchEventType::DOWN,346,322);event(TouchEventType::MOVE,326,302);
-    event(TouchEventType::UP,326,302);frameAt(164,140,true,184);
+    event(TouchEventType::DOWN,346,322);event(TouchEventType::MOVE,334,310);
+    event(TouchEventType::UP,334,310);frameAt(156,132,true,200);
+    tap(276,396);frameAt(164,140,false,184);
     const auto moved=app.exploreRouteModel();
     assert(moved.cameraX==before.cameraX&&moved.cameraY==before.cameraY&&moved.worldX==before.worldX&&moved.worldY==before.worldY);
     std::vector<uint16_t> expected(Photos::PIXELS);

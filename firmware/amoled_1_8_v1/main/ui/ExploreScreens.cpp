@@ -12,7 +12,6 @@
 #include <cstring>
 
 #include "assets/GameAssets.h"
-#include "assets/MenuAssets.h"
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
 #include "core/AppSceneFlow.h"
@@ -69,7 +68,7 @@ constexpr int EXPLORE_MENU_PANEL_TOP =
 constexpr int EXPLORE_ROUTE_HUD_X = 8;
 constexpr int EXPLORE_ROUTE_HUD_Y = 6;
 constexpr int EXPLORE_ROUTE_HUD_HEIGHT = 46;
-constexpr int EXPLORE_ROUTE_BAG_BUTTON_X = HOME_LOCK_BUTTON_X;
+constexpr int EXPLORE_ROUTE_CAMERA_BUTTON_X = HOME_LOCK_BUTTON_X;
 constexpr int EXPLORE_ROUTE_MENU_BUTTON_X = HOME_MENU_BUTTON_X;
 
 constexpr uint32_t EXPLORE_PREVIEW_CYCLE_MS = 2800;
@@ -200,25 +199,18 @@ constexpr const char* EXPLORE_AREA_NAMES[Game::EXPLORE_AREA_COUNT] = {
 };
 
 
-void drawExploreBagIcon(Canvas565& canvas) {
-    drawHomeHudButton(canvas, EXPLORE_ROUTE_BAG_BUTTON_X);
-    if (!MenuAssets::mainIconFrames() || !MenuAssets::mainIconRle()) return;
-    constexpr uint8_t bagIconIndex = 3;
-    const uint16_t offset = FlashStorage::readWord(
-        &MenuAssets::mainIconFrames()[bagIconIndex].offset);
-    const uint16_t length = FlashStorage::readWord(
-        &MenuAssets::mainIconFrames()[bagIconIndex].length);
-    // The source frame is 40x40. Keep a small, even inset inside the 64px
-    // HUD button so the backpack reads at the same visual weight as the
-    // other native HUD controls.
-    constexpr float scale = 1.4f;
-    constexpr int iconSize = 56;
-    PixelRenderer::drawRgb565RleScaled(
-        EXPLORE_ROUTE_BAG_BUTTON_X +
-            (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
-        HOME_HUD_BUTTON_Y + (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
-        MenuAssets::FRAME_W, MenuAssets::FRAME_H,
-        MenuAssets::mainIconRle(), offset, length, scale);
+void drawExploreCameraIcon(Canvas565& canvas) {
+    drawHomeHudButton(canvas, EXPLORE_ROUTE_CAMERA_BUTTON_X);
+    const int cx = EXPLORE_ROUTE_CAMERA_BUTTON_X + HOME_HUD_BUTTON_SIZE / 2;
+    const int cy = HOME_HUD_BUTTON_Y + HOME_HUD_BUTTON_SIZE / 2;
+    const auto ink = rgb(222, 234, 229);
+    canvas.drawRoundRect(cx - 18, cy - 11, 36, 28, 5, ink);
+    canvas.drawRoundRect(cx - 17, cy - 10, 34, 26, 4, ink);
+    canvas.drawLine(cx - 11, cy - 11, cx - 7, cy - 18, ink);
+    canvas.drawLine(cx - 7, cy - 18, cx + 7, cy - 18, ink);
+    canvas.drawLine(cx + 7, cy - 18, cx + 11, cy - 11, ink);
+    canvas.drawCircle(cx, cy + 3, 8, ink);
+    canvas.drawCircle(cx, cy + 3, 7, ink);
 }
 
 void drawExploreMenuIcon(Canvas565& canvas) {
@@ -1192,9 +1184,9 @@ bool exploreRouteBackAt(int x, int y) {
     return false;
 }
 
-bool exploreRouteBagAt(int x, int y) {
-    return x >= EXPLORE_ROUTE_BAG_BUTTON_X - 8 &&
-           x < EXPLORE_ROUTE_BAG_BUTTON_X + HOME_HUD_BUTTON_SIZE + 8 &&
+bool exploreRouteCameraAt(int x, int y) {
+    return x >= EXPLORE_ROUTE_CAMERA_BUTTON_X - 8 &&
+           x < EXPLORE_ROUTE_CAMERA_BUTTON_X + HOME_HUD_BUTTON_SIZE + 8 &&
            y >= HOME_STATUS_TOP && y < AmoledUi::HEIGHT;
 }
 
@@ -1249,7 +1241,7 @@ void drawExploreRouteBottomHud(Canvas565& canvas,
         (0),
         (HOME_STATUS_TOP),
         (AmoledUi::WIDTH), rgb(71, 108, 108));
-    drawExploreBagIcon(canvas);
+    drawExploreCameraIcon(canvas);
     drawExploreMenuIcon(canvas);
 
     canvas.fillRoundRect(

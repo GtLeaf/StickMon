@@ -25,7 +25,9 @@ void AmoledApp::debugReportPhotoState() const {
 }
 #endif
 void AmoledApp::openPhotoCamera(uint32_t nowMs){
-    if (market_ && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
+    const auto scene = sceneFlow.current();
+    const bool fromMenu = scene == AppSceneFlow::Scene::EXPLORE_MENU;
+    if (market_ && fromMenu) {
         if (!marketMenuAvailable()) return;
         cancelTouch();
         sceneFlow.enter(AppSceneFlow::Scene::MARKET);
@@ -34,10 +36,14 @@ void AmoledApp::openPhotoCamera(uint32_t nowMs){
         requestFullRender();
         return;
     }
-    const auto& route=exploreSession_.state();
-    if(sceneFlow.current()!=AppSceneFlow::Scene::EXPLORE_MENU||!exploreSessionActive||route.exploreRouteComplete||route.exploreRouteExitConfirm||route.exploreRouteExiting||route.exploreRouteIceSliding||exploreTransition_.fade().active())return;
-    sceneFlow.closeExploreMenu();
-    cancelTouch();pauseExploreRoute(nowMs);photoClockMs_=nowMs;
+    const auto& route = exploreSession_.state();
+    if ((!fromMenu && scene != AppSceneFlow::Scene::EXPLORE_ROUTE) || !exploreSessionActive ||
+        route.exploreRouteComplete || route.exploreRouteExitConfirm || route.exploreRouteExiting ||
+        route.exploreRouteIceSliding || exploreTransition_.fade().active()) return;
+    if (fromMenu) sceneFlow.closeExploreMenu();
+    cancelTouch();
+    pauseExploreRoute(nowMs);
+    photoClockMs_ = nowMs;
     photoFlow_.openCamera(selectedExploreArea,gameState.gameMinutesTotal/1440+1);
     requestFullRender();
 }

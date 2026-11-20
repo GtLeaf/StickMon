@@ -9,6 +9,10 @@
 
 namespace Ui {
 namespace {constexpr int BACK_TARGET=1000,SHUTTER=1001,RETAKE=1002,SAVE=1003,TRASH=1004,CANCEL=1005,DELETE=1006;}
+namespace {
+constexpr int ZOOM_OUT=1007, ZOOM_IN=1008;
+constexpr int ZOOM_STEP=16;
+}
 PhotoFlow::PhotoFlow(Geometry geometry):geometry_(geometry){
     frameX_=(geometry_.width-frameSize())/2;frameY_=(geometry_.mapHeight-frameSize())/2;
 }
@@ -56,6 +60,13 @@ void PhotoFlow::moveFrame(int x,int y){
     }
     frameDirty_|=x!=frameX_||y!=frameY_;frameX_=x;frameY_=y;
 }
+void PhotoFlow::resizeFrame(Rect origin,int delta){
+    const int size=std::clamp(origin.width+delta,MIN_FRAME_SIZE,MAX_FRAME_SIZE);
+    const int inset=(origin.width+1)/2-(size+1)/2;
+    frameDirty_|=size!=frameSize_;
+    frameSize_=size;
+    moveFrame(origin.x+inset,origin.y+inset);
+}
 void PhotoFlow::error(Photos::Result r){
     using R=Photos::Result;
     error_=r==R::OK?nullptr:r==R::FULL?Ui::Photo::FULL:r==R::UNAVAILABLE?Ui::Photo::UNAVAILABLE:
@@ -102,7 +113,13 @@ bool PhotoFlow::capture(const Canvas565& canvas,uint32_t day){
 int PhotoFlow::target(int x,int y)const{
     if(!contains(x,y))return -1;
     if(backBounds().contains(x,y))return BACK_TARGET;
-    if(page_==Page::VIEWFINDER)return shutterBounds().contains(x,y)?SHUTTER:-1;
+    if(page_==Page::VIEWFINDER){
+        if(!geometry_.circular){
+            if(ZOOM_OUT_BOUNDS.contains(x,y))return ZOOM_OUT;
+            if(ZOOM_IN_BOUNDS.contains(x,y))return ZOOM_IN;
+        }
+        return shutterBounds().contains(x,y)?SHUTTER:-1;
+    }
     if(page_==Page::PREVIEW){if(retakeBounds().contains(x,y))return RETAKE;if(saveBounds().contains(x,y))return SAVE;return -1;}
     if(page_==Page::DELETE_CONFIRM){if(cancelBounds().contains(x,y))return CANCEL;if(deleteBounds().contains(x,y))return DELETE;return -1;}
     if(page_==Page::DETAIL)return trashBounds().contains(x,y)?TRASH:-1;
@@ -135,11 +152,7 @@ PhotoFlow::Request PhotoFlow::touch(const Platform::IInputDevice::TouchEvent&e){
             if(frameDragging_ && frameGesture_==FrameGesture::RESIZE){
                 // Project finger motion onto the diagonal. Keeping the center
                 // fixed makes each edge travel half the change in side length.
-                const int size=std::clamp(frameOriginSize_+dx+dy,MIN_FRAME_SIZE,MAX_FRAME_SIZE);
-                frameDirty_|=size!=frameSize_;
-                frameSize_=size;
-                const int inset=(frameOriginSize_+1)/2-(size+1)/2;
-                moveFrame(frameOriginX_+inset,frameOriginY_+inset);
+                resizeFrame({frameOriginX_,frameOriginY_,frameOriginSize_,frameOriginSize_},dx+dy);
             }else if(frameDragging_){
                 moveFrame(frameOriginX_+dx,frameOriginY_+dy);
             }
@@ -175,6 +188,9 @@ PhotoFlow::Request PhotoFlow::touch(const Platform::IInputDevice::TouchEvent&e){
         if(page_==Page::PREVIEW){page_=Page::VIEWFINDER;imageValid_=false;}
         else if(page_==Page::DELETE_CONFIRM)page_=Page::DETAIL;
         else {page_=Page::ALBUM;image_.reset();imageValid_=false;}
+    }else if(activated==ZOOM_OUT || activated==ZOOM_IN){
+        resizeFrame({frameX_,frameY_,frameSize_,frameSize_},activated==ZOOM_OUT?ZOOM_STEP:-ZOOM_STEP);
+        frameDirty_=false; // The tap release redraws the viewfinder immediately.
     }else if(activated==SHUTTER){
         if(count()>=Photos::CAPACITY)error(Photos::Result::FULL);
         else return Request::CAPTURE;

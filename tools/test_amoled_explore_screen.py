@@ -182,7 +182,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("void drawExploreRouteBottomHud(", home)
         self.assertIn("std::min<uint8_t>(model.state->teamCount, 2)", home)
         self.assertIn("GameAssets::statusKind(monster.majorStatus)", home)
-        self.assertIn("drawExploreBagIcon(canvas);", home)
+        self.assertIn("drawExploreCameraIcon(canvas);", home)
         self.assertIn("drawExploreMenuIcon(canvas);", home)
         self.assertIn("drawExploreRouteHud(canvas, model);", home)
         self.assertIn("drawExploreRouteBottomHud(canvas, model);", home)
@@ -198,14 +198,14 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("constexpr int mapBottom = EXPLORE_ROUTE_VIEW_HEIGHT", app)
         self.assertIn("y < EXPLORE_ROUTE_MAP_BOTTOM", home)
 
-    def test_route_bottom_buttons_open_bag_and_menu(self):
+    def test_route_bottom_buttons_open_camera_and_menu(self):
         home = read_home_source(ROOT)
         app = read_app_source(ROOT)
 
-        self.assertIn("bool exploreRouteBagAt(int x, int y)", home)
-        self.assertIn("if (exploreRouteBagAt(x, y))", app)
-        shortcut = app.split("if (exploreRouteBagAt(x, y))", 1)[1].split("if (exploreRouteMenuAt", 1)[0]
-        self.assertIn("openItemScene(AppSceneFlow::Scene::BAG);", shortcut)
+        self.assertIn("bool exploreRouteCameraAt(int x, int y)", home)
+        self.assertIn("if (exploreRouteCameraAt(x, y))", app)
+        shortcut = app.split("if (exploreRouteCameraAt(x, y))", 1)[1].split("if (exploreRouteMenuAt", 1)[0]
+        self.assertIn("openPhotoCamera(nowMs);", shortcut)
         self.assertIn("case AppSceneFlow::ExploreMenuItem::BAG:", app)
         self.assertIn("if (exploreRouteMenuAt(x, y))", app)
 
