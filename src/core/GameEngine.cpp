@@ -1446,10 +1446,11 @@ bool GameEngine::recordCandyPurchase() {
 
 bool GameEngine::recordFriendContact(const Game::MonsterRuntime& monster,
                                      uint8_t metArea,
-                                     uint8_t* contactSlot) {
+                                     uint8_t* contactSlot,
+                                     ExploreSpecial::Kind special) {
     if (!Game::FriendshipService::recordContact(
             state, monster, metArea,
-            gameSecondsForMinutes(gameMinutesTotal()), contactSlot)) {
+            gameSecondsForMinutes(gameMinutesTotal()), contactSlot, special)) {
         return false;
     }
     markDirty(SaveUrgency::IMMEDIATE);
@@ -1922,7 +1923,7 @@ bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
     return false;
 #else
     const Species* species = findSpecies(speciesId);
-    if (!species) return false;
+    if (!species || species->assetsPending) return false;
 
     uint8_t level = state.teamCount > 0 ? activeMonster().level : 5;
     Game::MonsterRuntime mon = createMonster(species->id, level);

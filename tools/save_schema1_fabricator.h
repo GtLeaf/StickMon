@@ -1,8 +1,7 @@
 #pragma once
 
-// Rebuild frozen schema-1/v3, schema-2/v4 and schema-3/v5 payloads by removing the
-// append-only v6/v5 extensions (and v4 flag for schema 1), then updating version,
-// length and CRC.
+// Rebuild old codec payloads from a current snapshot using their frozen field
+// widths, extension lengths, and version numbers.
 
 #include "core/SaveCodec.h"
 
@@ -15,6 +14,8 @@ namespace SaveTestUtil {
 // Bytes written by SaveCodec's writeView (schema-independent): 33 bytes for
 // the primary view record plus 51 for the secondary record.
 constexpr size_t VIEW_PAYLOAD_BYTES = 84;
+constexpr size_t LEGACY_PITY_OFFSET = 1456;
+constexpr size_t CURRENT_PITY_BYTES = 9;
 
 inline uint16_t blobCrc16(const uint8_t* bytes, size_t length) {
     uint16_t crc = 0xFFFF;
@@ -48,20 +49,24 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
                                 (schema <= 4 ? SHOP_EXTENSION_BYTES : 0) +
                                 (schema <= 3 ? MARKET_EXTENSION_BYTES : 0) +
                                 (schema <= 2 ? CARE_EXTENSION_BYTES : 0) + (schema == 1 ? 1 : 0);
-    if (schema < 1 || schema > 8 || !encoded ||
-        length < SaveCodec::HEADER_BYTES + VIEW_PAYLOAD_BYTES + removedBytes + 1) {
+    if (schema < 1 || schema > 9 || !encoded ||
+        length < LEGACY_PITY_OFFSET + CURRENT_PITY_BYTES + VIEW_PAYLOAD_BYTES + removedBytes) {
         return false;
     }
     const size_t extensionOffset = length - VIEW_PAYLOAD_BYTES - removedBytes;
     out.clear();
-    out.reserve(length - removedBytes);
-    out.insert(out.end(), encoded, encoded + extensionOffset);
+    out.reserve(length - removedBytes + Game::LEGACY_FRIENDSHIP_PITY_COUNT - CURRENT_PITY_BYTES);
+    out.insert(out.end(), encoded, encoded + LEGACY_PITY_OFFSET);
+    out.insert(out.end(), Game::LEGACY_FRIENDSHIP_PITY_COUNT, 0);
+    out.insert(out.end(), encoded + LEGACY_PITY_OFFSET + CURRENT_PITY_BYTES, encoded + extensionOffset);
     out.insert(out.end(), encoded + extensionOffset + removedBytes, encoded + length);
     out[4] = static_cast<uint8_t>(schema);
     out[5] = 0;
     // State version lives right after the payload magic.
     out[SaveCodec::HEADER_BYTES + 4] =
-        static_cast<uint8_t>(schema == 1 ? 3 : schema == 2 ? 4 : schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 : schema <= 7 ? 8 : 9);
+        static_cast<uint8_t>(schema == 1 ? 3 : schema == 2 ? 4 : schema == 3 ? 5 :
+                             schema == 4 ? 6 : schema == 5 ? 7 : schema <= 7 ? 8 :
+                             schema == 8 ? 9 : 10);
     out[SaveCodec::HEADER_BYTES + 5] =
         0;
     const uint16_t payloadLength =

@@ -855,6 +855,87 @@ void verifySchema8AndRawV9SupplyDefaults() {
     }
 }
 
+void verifyV10FriendshipPityMigration(DesktopPlatform& desktop) {
+    auto& originalServices = desktop.serviceBundle();
+    SnapshotWriteFailures failures(originalServices.blobs);
+    Platform::Services services{
+        originalServices.lifecycle, originalServices.clock, originalServices.logger,
+        originalServices.input, originalServices.display, originalServices.audio,
+        originalServices.imu, originalServices.power, failures, originalServices.resources,
+        originalServices.memory, originalServices.peers};
+    Platform::bind(services);
+
+    for (bool rawVersion : {false, true}) {
+        assert(Platform::blobs().clearNamespace("stickmon"));
+        Game::GameState original{};
+        original.version = 10;
+        original.coins = 8765;
+        original.marketSupply.pendingAdvice = 2;
+        uint8_t counters[38]{};
+        counters[3] = counters[34] = 5;
+        counters[35] = 2;
+        counters[36] = 4;
+        counters[37] = 8;
+
+        std::vector<uint8_t> legacy;
+        if (rawVersion) {
+            struct RawV10 {
+                uint32_t magic = SAVE_RECORD_MAGIC;
+                uint16_t version = 10, reserved = 0;
+                uint8_t stateBytes[2528];
+                ViewV2 view{};
+            } raw{};
+            static_assert(sizeof(raw) == 2632);
+            std::memcpy(raw.stateBytes, &original, sizeof(raw.stateBytes));
+            std::memcpy(raw.stateBytes + 1518, counters, sizeof(counters));
+            const uint16_t crc = checksumBytes(raw.stateBytes, sizeof(raw.stateBytes), 6);
+            std::memcpy(raw.stateBytes + 6, &crc, 2);
+            const auto first = legacyViewV1();
+            std::memcpy(&raw.view, &first, sizeof(first));
+            raw.view.version = 2;
+            raw.view.checksum = checksumObject(raw.view);
+            const auto* bytes = reinterpret_cast<const uint8_t*>(&raw);
+            legacy.assign(bytes, bytes + sizeof(raw));
+        } else {
+            uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES]{};
+            size_t length = 0;
+            assert(SaveCodec::encode(original, {}, 9, encoded, sizeof(encoded), length));
+            assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded, length, legacy, 9));
+            std::memcpy(legacy.data() + SaveTestUtil::LEGACY_PITY_OFFSET, counters, sizeof(counters));
+            const uint16_t crc = SaveTestUtil::blobCrc16(legacy.data(), legacy.size());
+            legacy[14] = uint8_t(crc);
+            legacy[15] = uint8_t(crc >> 8);
+        }
+        assert(Platform::blobs().writeBlob("stickmon", "state", legacy.data(), legacy.size()));
+        failures.failSlots = failures.failMirror = true;
+        Game::GameState loaded{};
+        MainSceneViewState view{};
+        SaveManager manager;
+        bool normalized = false;
+        assert(manager.load(loaded, view, &normalized) && normalized);
+        const auto& pity = loaded.friendshipPity;
+        assert(loaded.version == 11 && loaded.coins == 8765);
+        assert(loaded.marketSupply.pendingAdvice == 2);
+        assert(pity.entries[0].speciesId == 151 && pity.entries[0].failures == 2);
+        assert(pity.entries[1].speciesId == 380 && pity.entries[1].failures == 4);
+        assert(pity.entries[2].speciesId == 381 && pity.entries[2].failures == 5);
+        std::vector<uint8_t> preserved(legacy.size());
+        assert(Platform::blobs().readBlob("stickmon", "state", preserved.data(), preserved.size()));
+        assert(preserved == legacy);
+
+        failures.failSlots = failures.failMirror = false;
+        assert(manager.load(loaded, view));
+        assert(manager.load(loaded, view));
+        assert(pity.entries[0].speciesId == 151 && pity.entries[0].failures == 2);
+        assert(pity.entries[1].speciesId == 380 && pity.entries[1].failures == 4);
+        assert(pity.entries[2].speciesId == 381 && pity.entries[2].failures == 5);
+        std::vector<uint8_t> rewritten(Platform::blobs().blobSize("stickmon", "state"));
+        assert(Platform::blobs().readBlob("stickmon", "state", rewritten.data(), rewritten.size()));
+        assert(rewritten[4] == SaveCodec::SCHEMA_VERSION);
+    }
+    Platform::bind(originalServices);
+}
+
 }  // namespace
 
 int main() {
@@ -863,6 +944,7 @@ int main() {
     assert(Platform::blobs().initialize());
     verifySupplyPlansAndCorruption();
     verifySchema8AndRawV9SupplyDefaults();
+    verifyV10FriendshipPityMigration(desktop);
     verifyV1Migration(desktop);
     verifyTransitionalMigration();
     verifyV2Migration(desktop);

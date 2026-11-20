@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include "game/ExploreEditorTiles.h"
+#include "game/ExploreHabitat.h"
+#include "game/ExploreMapGenerator.h"
 #include "game/ExploreRotatedTiles.h"
 #include "game/ExploreAncientValleyLayouts.h"
 #include "game/ExploreValleyData.h"
@@ -42,6 +44,28 @@ inline void sortActorsByGroundDepth(ActorDepth* actors, uint8_t count) {
 
 inline STICKMON_MAP_CONSTEXPR bool bridgeDeck(uint16_t tileId) {
     return tileId == 1627 || tileId == 1643 || ExploreValleyData::flag(tileId, 16);
+}
+
+inline STICKMON_MAP_CONSTEXPR bool openWaterCell(uint16_t base, uint16_t overlay, uint16_t top) {
+    if (top && !bridgeDeck(top)) return false;
+    if (ExploreAncientValley::openWater(overlay) || overlay == 96 ||
+        ExploreValleyData::flag(overlay, 8)) return true;
+    return !overlay && (base == 48 || base == 144 || base == 1097);
+}
+
+inline uint8_t encounterHabitat(const ExploreMapGenerator::Map& map) {
+    using namespace ExploreMapGenerator;
+    const bool cave = map.areaIndex == FROST_CRYSTAL_CAVE_AREA ||
+        (map.areaIndex == ANCIENT_WATERFALL_VALLEY_AREA &&
+         (!map.valleyJourney || map.valleyNode >= 6));
+    uint8_t habitat = cave ? ExploreHabitat::CAVE : 0;
+    for (uint16_t cell = 0; cell < CELL_COUNT; ++cell) {
+        if (openWaterCell(map.layers[0][cell], map.layers[1][cell], map.layers[2][cell])) {
+            habitat |= ExploreHabitat::OPEN_WATER;
+            break;
+        }
+    }
+    return habitat;
 }
 
 inline STICKMON_MAP_CONSTEXPR int foregroundDepthOffsetRows(uint16_t tileId) {

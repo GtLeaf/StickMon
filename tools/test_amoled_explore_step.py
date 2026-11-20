@@ -19,7 +19,7 @@ class AmoledExploreStepTests(unittest.TestCase):
         cls.addClassCleanup(temporary.cleanup)
         cls.binary = build_amoled_host(
             Path(temporary.name) / 'explore-session',
-            ['tools/amoled_explore_session_host.cpp'], debug=True)
+            ['tools/amoled_explore_session_host.cpp', 'tools/amoled_checksum_guard.cpp'], debug=True)
         if path := os.environ.get('AMOLED_EXPLORE_KEEP_BINARY'):
             import shutil
             shutil.copy2(cls.binary, path)
@@ -55,6 +55,9 @@ class AmoledExploreStepTests(unittest.TestCase):
 
     def test_battle_and_growth_return_rebase_route_animation_clock(self):
         self.run_case('battle-clock')
+
+    def test_legendary_friendship_failure_decline_and_accept_persist(self):
+        self.run_case('friendship-lru')
 
     def test_presenter_aliases_models_consumes_damage_and_isolates_instances(self):
         self.run_case('presenter')

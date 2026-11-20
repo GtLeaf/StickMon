@@ -165,6 +165,17 @@ static_assert(offsetof(Game::GameState, marketSupply) == 2524,
               "raw v9 state prefix changed");
 static_assert(sizeof(SaveRecordV9) == 2628, "raw v9 envelope changed");
 
+struct SaveRecordV10 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint8_t stateBytes[2528];
+    MainSceneViewRecord view;
+};
+static_assert(offsetof(Game::GameState, friendshipPity) == 2528,
+              "raw v10 state prefix changed");
+static_assert(sizeof(SaveRecordV10) == 2632, "raw v10 envelope changed");
+
 struct SaveRecordHeader {
     uint32_t magic;
     uint16_t version;
@@ -463,6 +474,8 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
 
     state = Game::GameState{};
     memcpy(&state, stateBytes, stateSize);
+    state.friendshipPity = FriendshipPity::migrateLegacy(state.legacyFriendshipPity);
+    std::memset(state.legacyFriendshipPity, 0, sizeof(state.legacyFriendshipPity));
     state.settings.reservedAudioSetting = 0;
     // Legacy v1/v2 records did not define gender. Use the requested stable
     // migration default for every team and storage monster.
@@ -892,14 +905,7 @@ bool sanitizeState(Game::GameState& state) {
         state.settings.language = 0;
         changed = true;
     }
-    for (uint8_t i = 0; i < Game::FRIENDSHIP_PITY_TRACKED_COUNT; ++i) {
-        if (state.friendshipPityFailCounts[i] >
-            FriendshipPity::MAX_FAIL_COUNT) {
-            state.friendshipPityFailCounts[i] =
-                FriendshipPity::MAX_FAIL_COUNT;
-            changed = true;
-        }
-    }
+    if (FriendshipPity::sanitize(state.friendshipPity)) changed = true;
     uint8_t specialMask = static_cast<uint8_t>(
         state.specialBossDefeatedMask & ExploreSpecial::VALID_DEFEATED_MASK);
     if (specialMask != state.specialBossDefeatedMask) {
@@ -1037,8 +1043,7 @@ bool SaveManager::load(Game::GameState& state,
         bool migrationPending = false;
         if (migrated) {
             Platform::logf("[SaveManager] migrated state v%u -> v%u\n",
-                           codecHeap->schema == 1 ? 3 : codecHeap->schema == 2 ? 4 :
-                           codecHeap->schema == 3 ? 5 : codecHeap->schema == 4 ? 6 : codecHeap->schema == 5 ? 7 : codecHeap->schema <= 7 ? 8 : 9,
+                           SaveCodec::stateVersionForSchema(codecHeap->schema),
                            Game::SAVE_VERSION);
             if (saveSnapshot(state, viewState)) {
                 Platform::logLine("[SaveManager] migration committed");
@@ -1143,6 +1148,14 @@ bool SaveManager::load(Game::GameState& state,
     } else if (header.version == 9 && len == sizeof(SaveRecordV9)) {
         const auto* record = reinterpret_cast<const SaveRecordV9*>(raw);
         loaded = loadLegacyGameState(record->stateBytes, 9, state, 2524);
+        if (loaded) {
+            viewValid = mainSceneViewRecordValid(record->view);
+            if (viewValid) loadMainSceneViewRecord(record->view, viewState);
+            migrated = true;
+        }
+    } else if (header.version == 10 && len == sizeof(SaveRecordV10)) {
+        const auto* record = reinterpret_cast<const SaveRecordV10*>(raw);
+        loaded = loadLegacyGameState(record->stateBytes, 10, state, sizeof(record->stateBytes));
         if (loaded) {
             viewValid = mainSceneViewRecordValid(record->view);
             if (viewValid) loadMainSceneViewRecord(record->view, viewState);

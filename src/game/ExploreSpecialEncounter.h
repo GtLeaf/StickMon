@@ -49,22 +49,23 @@ struct Config {
     uint16_t experiencePercent;
     bool optional;
     bool allowsFriendship;
+    bool usesFriendshipPity;
 };
 
 static constexpr Config NO_CONFIG =
-    {0, INVALID_AREA, 0, 100, false, false};
+    {0, INVALID_AREA, 0, 100, false, false, false};
 static constexpr Config FIRST_SNORLAX_CONFIG =
-    {SNORLAX, SNORLAX_AREA, 0, 200, false, true};
+    {SNORLAX, SNORLAX_AREA, 0, 200, false, true, false};
 static constexpr Config FIRST_LATIAS_CONFIG =
-    {LATIAS, LATIAS_AREA, 0, 200, false, false};
+    {LATIAS, LATIAS_AREA, 0, 200, false, false, false};
 static constexpr Config FIRST_LATIOS_CONFIG =
-    {LATIOS, LATIOS_AREA, 0, 200, false, false};
+    {LATIOS, LATIOS_AREA, 0, 200, false, false, false};
 static constexpr Config ROAMING_LATIAS_CONFIG =
-    {LATIAS, INVALID_AREA, ROAMING_LEVEL, 200, true, true};
+    {LATIAS, INVALID_AREA, ROAMING_LEVEL, 200, true, true, true};
 static constexpr Config ROAMING_LATIOS_CONFIG =
-    {LATIOS, INVALID_AREA, ROAMING_LEVEL, 200, true, true};
+    {LATIOS, INVALID_AREA, ROAMING_LEVEL, 200, true, true, true};
 static constexpr Config MEW_EVENT_CONFIG =
-    {MEW, MEW_AREA, ROAMING_LEVEL, 200, true, true};
+    {MEW, MEW_AREA, ROAMING_LEVEL, 200, true, true, true};
 
 constexpr Config configFor(Kind kind) {
     return kind == Kind::FIRST_SNORLAX
@@ -86,6 +87,11 @@ constexpr bool isFirstBoss(Kind kind) {
     return kind == Kind::FIRST_SNORLAX ||
            kind == Kind::FIRST_LATIAS ||
            kind == Kind::FIRST_LATIOS;
+}
+
+constexpr bool usesFriendshipPity(const Config& config, uint16_t speciesId) {
+    return config.allowsFriendship && config.usesFriendshipPity &&
+           config.speciesId == speciesId;
 }
 
 constexpr bool isRoaming(Kind kind) {

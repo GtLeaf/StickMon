@@ -1,5 +1,6 @@
 #include "game/ExploreLakeTiles.h"
 #include "game/ExploreMapGenerator.h"
+#include "game/ExploreTileSemantics.h"
 
 #include "game/ExploreCaveTiles.h"
 #include "game/ExploreIceSlide.h"
@@ -3041,8 +3042,12 @@ static bool generateCandidate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, 
 bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
               FrostContext frost) {
     uint8_t attempts = areaIndex == CREEK_BRIDGE_SLOPE_AREA ? 16 : 1;
-    for (uint8_t attempt = 0; attempt < attempts; ++attempt)
-        if (generateCandidate(seed, entryEdge, areaIndex, out, frost, attempt)) return true;
+    for (uint8_t attempt = 0; attempt < attempts; ++attempt) {
+        if (generateCandidate(seed, entryEdge, areaIndex, out, frost, attempt)) {
+            out.habitat = ExploreTileSemantics::encounterHabitat(out);
+            return true;
+        }
+    }
     return false;
 }
 
@@ -3176,6 +3181,7 @@ bool generateValleyRegion(uint32_t seed, ValleyContext context, bool finalBlock,
         if (!common) break;
         out.junction = out.paths[0].points[i];
     }
+    out.habitat = ExploreTileSemantics::encounterHabitat(out);
     return true;
 }
 

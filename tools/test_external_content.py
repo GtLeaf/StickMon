@@ -33,9 +33,17 @@ template<class V> void contentFields(V& v,TestRecord& x) {v(x.number,x.text,x.en
     DesktopPlatform desktop(argv[2]);Platform::bind(desktop.serviceBundle());
     if(!ResourceFS::ins().begin()) return 4;
     ContentStore store;ContentData::bind(&store);
+    const auto* mew=findSpecies(151);
+    if(!mew || mew->catchRate!=3) return 12;
+    const auto* wurmple=findSpecies(265);
+    Game::MonsterRuntime individual{};
+    individual.level=7;
+    individual.ivPacked=1;
+    if(!wurmple || !wurmple->assetsPending ||
+       levelUpEvolutionTarget(*wurmple,individual,0)!=findSpecies(268)) return 13;
     if(argc==4 && std::string(argv[3])=="extension") {
         const auto* s=findSpecies(999);PokemonSprites::WalkingAnimation walking{};PokemonSprites::PetAnimationProfile pet{};
-        if(!s || speciesCount()!=65 || !findLearnset(999) || !PokemonSprites::walkingAnimation(999,PokemonSprites::WalkDirection::DOWN,walking) ||
+        if(!s || speciesCount()!=94 || !findLearnset(999) || !PokemonSprites::walkingAnimation(999,PokemonSprites::WalkDirection::DOWN,walking) ||
            !PokemonSprites::petAnimationProfile(999,pet) || !PokemonMotion::profile(999) || !ExploreEcology::profile(999) || !PokemonBattleSizes::front(999).width) return 10;
         const auto* picture=PokemonSprites::findSpeciesSprite(999,PokemonSprites::SpriteKind::FRONT);
         return picture && ExploreGrassPathData::TILES[1]==386 ? 0:11;
@@ -78,6 +86,18 @@ template<class V> void contentFields(V& v,TestRecord& x) {v(x.number,x.text,x.en
         except subprocess.CalledProcessError:pass
         else:raise AssertionError('accepted removed held-item tutor move 168')
     finally:tutor.write_bytes(original_tutor)
+    encounters=catalog/'30.smondata';original_encounters=encounters.read_bytes()
+    try:
+        duplicate=bytearray(original_encounters)
+        duplicate[22:24]=duplicate[16:18]  # Two rows for the same species.
+        pending=bytearray(original_encounters)
+        struct.pack_into('<H',pending,16,265)
+        for rejected,label in ((duplicate,'duplicate'),(pending,'pending')):
+            encounters.write_bytes(rejected)
+            try:validate(root)
+            except subprocess.CalledProcessError:pass
+            else:raise AssertionError(f'accepted {label} species in an encounter table')
+    finally:encounters.write_bytes(original_encounters)
     payload=struct.pack('<IH',0x12345678,6)+b'hello\0'+b'\x01'
     good=struct.pack('<IHHII',0x44434d53,1,100,1,len(payload))+payload
     testfile=catalog/'100.smondata'

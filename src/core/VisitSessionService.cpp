@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "game/MonsterFactory.h"
+#include "game/Species.h"
 #include "platform/api/PlatformServices.h"
 
 namespace Communication {
@@ -270,6 +271,8 @@ void VisitSessionService::processIncoming(uint32_t nowMs) {
             state_ == State::SYNCING) {
             VisitSyncPayload sync{};
             std::memcpy(&sync, payload, sizeof(sync));
+            const auto* species = findSpecies(sync.speciesId);
+            if (species && species->assetsPending) sync.speciesId = starterSpecies().id;
             remote_.known = true;
             remote_.speciesId = sync.speciesId;
             remote_.level = sync.level;

@@ -1,5 +1,6 @@
 #include "AmoledApp.h"
 #include "game/GameRandom.h"
+#include "game/FriendshipPity.h"
 #include "game/MonsterFactory.h"
 #include "game/ItemInventory.h"
 #include "game/ExploreCaveTiles.h"
@@ -466,6 +467,48 @@ struct AmoledAppTestAccess {
         assert(app.sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE);
     }
 
+    static void legendaryFriendship(DesktopPlatform& desktop) {
+        AmoledApp app;
+        app.begin(desktop.millis());
+        fixture(app.exploreSession_, app.gameState, ExploreSpecial::MEW_AREA);
+        app.gameState.teamCount = 1;
+        app.gameState.team[0] = Game::MonsterFactory::create(7, 100);
+        app.selectedExploreArea = ExploreSpecial::MEW_AREA;
+        app.sceneFlow.enterExploreRoute();
+        FriendshipPity::recordFailure(app.gameState.friendshipPity, ExploreSpecial::LATIAS);
+
+        const auto winAgainstMew = [&](GameRandom::RangeProvider roll) {
+            desktop.advanceMs(200);
+            const uint32_t now = desktop.millis();
+            assert(app.beginExploreEncounter(now, true, ExploreSpecial::MEW, 70, 200,
+                                            ExploreSpecial::Kind::MEW_EVENT));
+            app.battleSession_.clearLog();
+            app.battleSession_.state_.battlePhase = BattleViewModel::Phase::VICTORY;
+            GameRandom::setRangeProvider(roll);
+            app.finishBattleVictory(now);
+            GameRandom::setRangeProvider(nullptr);
+        };
+        const auto verifySaved = [&](uint8_t failures, uint8_t contacts) {
+            Game::GameState saved{};
+            MainSceneViewState view{};
+            SaveManager manager;
+            assert(manager.load(saved, view));
+            assert(FriendshipPity::failuresFor(saved.friendshipPity, ExploreSpecial::MEW) == failures);
+            assert(FriendshipPity::failuresFor(saved.friendshipPity, ExploreSpecial::LATIAS) == 1);
+            assert(saved.storageCount == contacts);
+        };
+        winAgainstMew([](uint32_t, uint32_t high) { return high - 1; });
+        verifySaved(1, 0);
+        winAgainstMew([](uint32_t low, uint32_t) { return low; });
+        assert(app.battleSession_.state().battlePhase == BattleViewModel::Phase::FRIENDSHIP);
+        app.resolveBattleFriendship(1, desktop.millis());
+        verifySaved(1, 0);
+        winAgainstMew([](uint32_t low, uint32_t) { return low; });
+        app.resolveBattleFriendship(0, desktop.millis());
+        app.resolveBattleFriendship(1, desktop.millis());  // Decline joining the team.
+        verifySaved(0, 1);
+    }
+
     static void menuReturn(DesktopPlatform& desktop) {
         AmoledApp app;
         app.begin(desktop.millis());
@@ -587,5 +630,6 @@ int main(int argc, char** argv) {
     else if (std::strcmp(argv[2], "presenter") == 0) Probe::presenterContract();
     else if (std::strcmp(argv[2], "menu-return") == 0) Probe::menuReturn(desktop);
     else if (std::strcmp(argv[2], "battle-clock") == 0) Probe::battleReturnClock(desktop);
+    else if (std::strcmp(argv[2], "friendship-lru") == 0) Probe::legendaryFriendship(desktop);
     else assert(false && "unknown scenario");
 }

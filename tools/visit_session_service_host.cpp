@@ -189,6 +189,17 @@ void testHostAdmission(Communication::VisitSessionService& service,
     service.stop();
 }
 
+void testPendingSpeciesVisit(DesktopPlatform& desktop,
+                             Communication::VisitSessionService& service,
+                             Game::GameState& state) {
+    const VisitSyncPayload sync{265, 18, 3, 44, 55, 66};
+    connectHost(desktop, service, state, sync);
+    assert(state.team[1].speciesId == 1 && state.team[1].level == 18);
+    assert(service.viewModel().remote.speciesId == state.team[1].speciesId);
+    service.stop();
+    drain(desktop);
+}
+
 void testTouchBeforeFrameUpdate(DesktopPlatform& desktop,
                                 Communication::VisitSessionService& service,
                                 Game::GameState& state) {
@@ -641,6 +652,7 @@ int main() {
     testManualDecisionAndRoomList(desktop, service, state);
     testHostRejectsLateTeamChange(desktop, service, state);
     testHostRecallAndDuration(desktop, service, state);
+    testPendingSpeciesVisit(desktop, service, state);
     testVisitorHealthSync(desktop, service, state);
     testVisitorDepartureSignal(desktop, service, state);
     testVisitorAuthorityAndRecall(desktop, service, state);

@@ -38,8 +38,26 @@ static void exploreCardTests(DesktopPlatform& desktop,GameEngine& engine,const s
     for(int i=0;i<d.host.frame.visibleAreaCount;++i)d.host.frame.areaNames[i]=names[i];d.host.frame.areaIds[6]=ExploreDestinations::MARKET;d.host.frame.marketOpen=true;
     // All shipped FRONT canvases fit the native1x viewport. Group every sample
     // with real dimensions; do not silently shrink the larger species.
-    int species=0;for(size_t i=0;i<speciesCount();++i){const uint16_t id=speciesTable()[i].id;PokemonSprites::preloadDynamicSpecies(&id,1,1);const auto* f=PokemonSprites::findSpeciesSprite(speciesTable()[i].id,PokemonSprites::SpriteKind::FRONT);if(!f||f->width>PET_BOUNDS.width||f->height>PET_BOUNDS.height)std::fprintf(stderr,"FRONT id%u %ux%u ready=%u\n",speciesTable()[i].id,f?f->width:0,f?f->height:0,unsigned(f!=nullptr));assert(f&&f->width<=PET_BOUNDS.width&&f->height<=PET_BOUNDS.height);++species;}
-    assert(species>0&&species==speciesCount());
+    int species = 0;
+    for (size_t i = 0; i < speciesCount(); ++i) {
+        const auto& entry = speciesTable()[i];
+        if (entry.assetsPending) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            const uint16_t active = engine.activeMonster().speciesId;
+            assert(!engine.debugSetActiveSpecies(entry.id));
+            assert(engine.activeMonster().speciesId == active);
+#endif
+            continue;
+        }
+        PokemonSprites::preloadDynamicSpecies(&entry.id, 1, 1);
+        const auto* front = PokemonSprites::findSpeciesSprite(entry.id, PokemonSprites::SpriteKind::FRONT);
+        if (!front || front->width > PET_BOUNDS.width || front->height > PET_BOUNDS.height)
+            std::fprintf(stderr, "FRONT id%u %ux%u ready=%u\n",
+                         entry.id, front ? front->width : 0, front ? front->height : 0, unsigned(front != nullptr));
+        assert(front && front->width <= PET_BOUNDS.width && front->height <= PET_BOUNDS.height);
+        ++species;
+    }
+    assert(species > 0);
     for(const uint16_t id:{113,115,225,352}){
         PokemonSprites::preloadDynamicSpecies(&id,1,1);
         const auto* f=PokemonSprites::findSpeciesSprite(id,PokemonSprites::SpriteKind::FRONT);

@@ -18,6 +18,7 @@
 #include "game/StandbyCare.h"
 #endif
 #include "game/ExploreItemEffects.h"
+#include "game/ExploreSpecialEncounter.h"
 #include "game/EncounterHistory.h"
 #include "game/ItemInventory.h"
 #include "game/Species.h"
@@ -235,7 +236,8 @@ public:
     void addCoins(uint32_t amount);
     bool recordFriendContact(const Game::MonsterRuntime& monster,
                              uint8_t metArea,
-                             uint8_t* contactSlot = nullptr);
+                             uint8_t* contactSlot = nullptr,
+                             ExploreSpecial::Kind special = ExploreSpecial::Kind::NONE);
     void grantEffortFrom(const Species& defeatedSpecies);
     void grantEffortToTeamMember(uint8_t teamSlot, const Species& defeatedSpecies);
     bool rewardPairInteractionMood();

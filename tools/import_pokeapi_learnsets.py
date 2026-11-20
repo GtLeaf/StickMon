@@ -441,6 +441,10 @@ def selected_level_moves(pokemon, version_group):
     return selected
 
 
+def level_up_roster_ids(roster):
+    return sorted({int(value) for value in roster["speciesIds"] + roster.get("pendingSpeciesIds", [])})
+
+
 def resource_id(resource):
     url = resource.get("url", "").rstrip("/")
     try:
@@ -536,7 +540,7 @@ def derive_basic_move(species_id, entries, move_by_id):
 
 def refresh_snapshot(roster):
     version_group = roster["versionGroup"]
-    species_ids = sorted(set(int(value) for value in roster["speciesIds"]))
+    species_ids = level_up_roster_ids(roster)
     version_group_resource = fetch_json(
         f"{API_ROOT}/version-group/{version_group}",
         CACHE_ROOT / "version-group" / f"{version_group}.json",
@@ -546,7 +550,6 @@ def refresh_snapshot(roster):
     species_resources = fetch_many("pokemon-species", species_ids)
 
     raw_species = []
-    move_identifiers = set()
     for species_id in species_ids:
         pokemon = pokemon_resources[species_id]
         entries = selected_level_moves(pokemon, version_group)
@@ -554,7 +557,6 @@ def refresh_snapshot(roster):
             raise RuntimeError(
                 f"species {species_id} ({pokemon.get('name')}) has no {version_group} learnset"
             )
-        move_identifiers.update(entry["moveIdentifier"] for entry in entries)
         raw_species.append({
             "id": species_id,
             "identifier": pokemon.get("name", str(species_id)),
@@ -564,6 +566,23 @@ def refresh_snapshot(roster):
             "entries": entries,
         })
 
+    pending_ids = {int(value) for value in roster.get("pendingSpeciesIds", [])}
+    available_moves = {
+        entry["moveIdentifier"]
+        for species in raw_species if species["id"] not in pending_ids
+        for entry in species["entries"]
+    } | set(roster.get("pendingMoveExceptions", []))
+    for species in raw_species:
+        if species["id"] in pending_ids:
+            species["entries"] = [
+                entry for entry in species["entries"] if entry["moveIdentifier"] in available_moves
+            ]
+            if not species["entries"]:
+                raise RuntimeError(f"pending species {species['id']} has no registered level-up moves")
+
+    move_identifiers = {
+        entry["moveIdentifier"] for species in raw_species for entry in species["entries"]
+    }
     move_resources = fetch_many("move", sorted(move_identifiers))
     moves = []
     move_id_by_identifier = {}
@@ -687,7 +706,7 @@ def validate_snapshot(snapshot, roster):
         raise RuntimeError(f"unsupported snapshot schema: {snapshot.get('schema')}")
     if snapshot.get("source", {}).get("versionGroup") != roster.get("versionGroup"):
         raise RuntimeError("snapshot version group does not match species_roster.json")
-    expected = sorted(set(int(value) for value in roster["speciesIds"]))
+    expected = level_up_roster_ids(roster)
     actual = sorted(int(species["id"]) for species in snapshot.get("species", []))
     if actual != expected:
         raise RuntimeError("snapshot species list does not match species_roster.json")

@@ -10,6 +10,10 @@ constexpr uint16_t EV(uint8_t hp, uint8_t atk, uint8_t def, uint8_t spa, uint8_t
            ((spa & 0x3) << 6) | ((spd & 0x3) << 8) | ((spe & 0x3) << 10);
 }
 
+constexpr uint16_t EEVEE = 133;
+constexpr uint16_t WURMPLE = 265;
+constexpr uint16_t CASCOON = 268;
+
 // Base Exp values follow Pokemon Essentials' Gen 6 PBS data.
 #if STICKMON_EXTERNAL_CONTENT
 inline const ContentData::Table<Species,255,false> SPECIES{1};
@@ -42,7 +46,7 @@ const Species SPECIES[] = {
     {16, Ui::SpeciesName::PIDGEY, TypeId::NORMAL, TypeId::FLYING, {40, 45, 40, 35, 35, 56}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 1), 17, EvolutionMethod::LEVEL, 18, 50, 255},
     {17, Ui::SpeciesName::PIDGEOTTO, TypeId::NORMAL, TypeId::FLYING, {63, 60, 55, 50, 50, 71}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 2), 18, EvolutionMethod::LEVEL, 36, 122, 120},
     {18, Ui::SpeciesName::PIDGEOT, TypeId::NORMAL, TypeId::FLYING, {83, 80, 75, 70, 70, 101}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 3), 0, EvolutionMethod::NONE, 0, 211, 45},
-    {151, Ui::SpeciesName::MEW, TypeId::PSYCHIC, TypeId::NONE, {100, 100, 100, 100, 100, 100}, GrowthRate::PARABOLIC, EV(3, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 270, 45},
+    {151, Ui::SpeciesName::MEW, TypeId::PSYCHIC, TypeId::NONE, {100, 100, 100, 100, 100, 100}, GrowthRate::PARABOLIC, EV(3, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 270, 3},
     {161, Ui::SpeciesName::SENTRET, TypeId::NORMAL, TypeId::NONE, {35, 46, 34, 35, 45, 20}, GrowthRate::MEDIUM, EV(0, 1, 0, 0, 0, 0), 162, EvolutionMethod::LEVEL, 15, 43, 255},
     {162, Ui::SpeciesName::FURRET, TypeId::NORMAL, TypeId::NONE, {85, 76, 64, 45, 55, 90}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 2), 0, EvolutionMethod::NONE, 0, 145, 90},
     {298, Ui::SpeciesName::AZURILL, TypeId::NORMAL, TypeId::FAIRY, {50, 20, 40, 20, 40, 20}, GrowthRate::FAST, EV(1, 0, 0, 0, 0, 0), 183, EvolutionMethod::FRIENDSHIP, 0, 38, 150},
@@ -91,6 +95,36 @@ const Species SPECIES[] = {
     {147, Ui::SpeciesName::DRATINI, TypeId::DRAGON, TypeId::NONE, {41, 64, 45, 50, 50, 50}, GrowthRate::SLOW, EV(0, 1, 0, 0, 0, 0), 148, EvolutionMethod::LEVEL, 30, 60, 45},
     {148, Ui::SpeciesName::DRAGONAIR, TypeId::DRAGON, TypeId::NONE, {61, 84, 65, 70, 70, 70}, GrowthRate::SLOW, EV(0, 2, 0, 0, 0, 0), 149, EvolutionMethod::LEVEL, 50, 147, 45},
     {149, Ui::SpeciesName::DRAGONITE, TypeId::DRAGON, TypeId::FLYING, {91, 134, 95, 100, 100, 80}, GrowthRate::SLOW, EV(0, 3, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 270, 45},
+    // Gen I-III expansion. Presentation assets are staged separately.
+    {124, Ui::SpeciesName::JYNX, TypeId::ICE, TypeId::PSYCHIC, {65, 50, 35, 115, 95, 95}, GrowthRate::MEDIUM, EV(0, 0, 0, 2, 0, 0), 0, EvolutionMethod::NONE, 0, 159, 45, true},
+    {214, Ui::SpeciesName::HERACROSS, TypeId::BUG, TypeId::FIGHTING, {80, 125, 75, 40, 95, 85}, GrowthRate::SLOW, EV(0, 2, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 175, 45, true},
+    {215, Ui::SpeciesName::SNEASEL, TypeId::DARK, TypeId::ICE, {55, 95, 55, 35, 75, 115}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 1), 0, EvolutionMethod::NONE, 0, 86, 60, true},
+    {220, Ui::SpeciesName::SWINUB, TypeId::ICE, TypeId::GROUND, {50, 50, 40, 30, 30, 50}, GrowthRate::SLOW, EV(0, 1, 0, 0, 0, 0), 221, EvolutionMethod::LEVEL, 33, 50, 225, true},
+    {221, Ui::SpeciesName::PILOSWINE, TypeId::ICE, TypeId::GROUND, {100, 100, 80, 60, 60, 50}, GrowthRate::SLOW, EV(1, 1, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 158, 75, true},
+    {225, Ui::SpeciesName::DELIBIRD, TypeId::ICE, TypeId::FLYING, {45, 55, 45, 65, 45, 75}, GrowthRate::FAST, EV(0, 0, 0, 0, 0, 1), 0, EvolutionMethod::NONE, 0, 116, 45, true},
+    {238, Ui::SpeciesName::SMOOCHUM, TypeId::ICE, TypeId::PSYCHIC, {45, 30, 15, 85, 65, 65}, GrowthRate::MEDIUM, EV(0, 0, 0, 1, 0, 0), 124, EvolutionMethod::LEVEL, 30, 61, 45, true},
+    {263, Ui::SpeciesName::ZIGZAGOON, TypeId::NORMAL, TypeId::NONE, {38, 30, 41, 30, 41, 60}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 1), 264, EvolutionMethod::LEVEL, 20, 56, 255, true},
+    {264, Ui::SpeciesName::LINOONE, TypeId::NORMAL, TypeId::NONE, {78, 70, 61, 50, 61, 100}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 2), 0, EvolutionMethod::NONE, 0, 147, 90, true},
+    {265, Ui::SpeciesName::WURMPLE, TypeId::BUG, TypeId::NONE, {45, 45, 35, 20, 30, 20}, GrowthRate::MEDIUM, EV(1, 0, 0, 0, 0, 0), 266, EvolutionMethod::BRANCH, 7, 56, 255, true},
+    {266, Ui::SpeciesName::SILCOON, TypeId::BUG, TypeId::NONE, {50, 35, 55, 25, 25, 15}, GrowthRate::MEDIUM, EV(0, 0, 2, 0, 0, 0), 267, EvolutionMethod::LEVEL, 10, 72, 120, true},
+    {267, Ui::SpeciesName::BEAUTIFLY, TypeId::BUG, TypeId::FLYING, {60, 70, 50, 100, 50, 65}, GrowthRate::MEDIUM, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, 178, 45, true},
+    {268, Ui::SpeciesName::CASCOON, TypeId::BUG, TypeId::NONE, {50, 35, 55, 25, 25, 15}, GrowthRate::MEDIUM, EV(0, 0, 2, 0, 0, 0), 269, EvolutionMethod::LEVEL, 10, 72, 120, true},
+    {269, Ui::SpeciesName::DUSTOX, TypeId::BUG, TypeId::POISON, {60, 50, 70, 50, 90, 65}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 3, 0), 0, EvolutionMethod::NONE, 0, 173, 45, true},
+    {270, Ui::SpeciesName::LOTAD, TypeId::WATER, TypeId::GRASS, {40, 30, 30, 40, 50, 30}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 1, 0), 271, EvolutionMethod::LEVEL, 14, 44, 255, true},
+    {271, Ui::SpeciesName::LOMBRE, TypeId::WATER, TypeId::GRASS, {60, 50, 50, 60, 70, 50}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 2, 0), 272, EvolutionMethod::STONE, 0, 119, 120, true},
+    {272, Ui::SpeciesName::LUDICOLO, TypeId::WATER, TypeId::GRASS, {80, 70, 70, 90, 100, 70}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 3, 0), 0, EvolutionMethod::NONE, 0, 216, 45, true},
+    {273, Ui::SpeciesName::SEEDOT, TypeId::GRASS, TypeId::NONE, {40, 40, 50, 30, 30, 30}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 0, 0), 274, EvolutionMethod::LEVEL, 14, 44, 255, true},
+    {274, Ui::SpeciesName::NUZLEAF, TypeId::GRASS, TypeId::DARK, {70, 70, 40, 60, 40, 60}, GrowthRate::PARABOLIC, EV(0, 2, 0, 0, 0, 0), 275, EvolutionMethod::STONE, 0, 119, 120, true},
+    {275, Ui::SpeciesName::SHIFTRY, TypeId::GRASS, TypeId::DARK, {90, 100, 60, 90, 60, 80}, GrowthRate::PARABOLIC, EV(0, 3, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 216, 45, true},
+    {299, Ui::SpeciesName::NOSEPASS, TypeId::ROCK, TypeId::NONE, {30, 45, 135, 45, 90, 30}, GrowthRate::MEDIUM, EV(0, 0, 1, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 75, 255, true},
+    {302, Ui::SpeciesName::SABLEYE, TypeId::DARK, TypeId::GHOST, {50, 75, 75, 65, 65, 50}, GrowthRate::PARABOLIC, EV(0, 1, 1, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 133, 45, true},
+    {339, Ui::SpeciesName::BARBOACH, TypeId::WATER, TypeId::GROUND, {50, 48, 43, 46, 41, 60}, GrowthRate::MEDIUM, EV(1, 0, 0, 0, 0, 0), 340, EvolutionMethod::LEVEL, 30, 58, 190, true},
+    {340, Ui::SpeciesName::WHISCASH, TypeId::WATER, TypeId::GROUND, {110, 78, 73, 76, 71, 60}, GrowthRate::MEDIUM, EV(2, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 164, 75, true},
+    {341, Ui::SpeciesName::CORPHISH, TypeId::WATER, TypeId::NONE, {43, 80, 65, 50, 35, 35}, GrowthRate::FLUCTUATING, EV(0, 1, 0, 0, 0, 0), 342, EvolutionMethod::LEVEL, 30, 62, 205, true},
+    {342, Ui::SpeciesName::CRAWDAUNT, TypeId::WATER, TypeId::DARK, {63, 120, 85, 90, 55, 55}, GrowthRate::FLUCTUATING, EV(0, 2, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 164, 155, true},
+    {355, Ui::SpeciesName::DUSKULL, TypeId::GHOST, TypeId::NONE, {20, 40, 90, 30, 90, 25}, GrowthRate::FAST, EV(0, 0, 0, 0, 1, 0), 356, EvolutionMethod::LEVEL, 37, 59, 190, true},
+    {356, Ui::SpeciesName::DUSCLOPS, TypeId::GHOST, TypeId::NONE, {40, 70, 130, 60, 130, 25}, GrowthRate::FAST, EV(0, 0, 1, 0, 1, 0), 0, EvolutionMethod::NONE, 0, 159, 90, true},
+    {359, Ui::SpeciesName::ABSOL, TypeId::DARK, TypeId::NONE, {65, 130, 60, 75, 60, 75}, GrowthRate::PARABOLIC, EV(0, 2, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, 163, 30, true},
 };
 
 #include "game/OfficialMoveData.inc"
@@ -176,12 +210,12 @@ AbilityId abilityForSpecies(const Species& species) {
     case 1: case 2: case 3: return AbilityId::OVERGROW;
     case 4: case 5: case 6: return AbilityId::BLAZE;
     case 7: case 8: case 9: return AbilityId::TORRENT;
-    case 10: return AbilityId::SHIELD_DUST;
-    case 11: case 147: case 148: return AbilityId::SHED_SKIN;
+    case 10: case 265: case 269: return AbilityId::SHIELD_DUST;
+    case 11: case 147: case 148: case 266: case 268: return AbilityId::SHED_SKIN;
     case 12: return AbilityId::COMPOUND_EYES;
     case 25: case 26: case 172: return AbilityId::STATIC;
-    case 74: case 75: case 76: return AbilityId::STURDY;
-    case 92: case 93: case 94: case 380: case 381: return AbilityId::LEVITATE;
+    case 74: case 75: case 76: case 299: return AbilityId::STURDY;
+    case 92: case 93: case 94: case 355: case 380: case 381: return AbilityId::LEVITATE;
     case 133: return AbilityId::ADAPTABILITY;
     case 134: case 194: case 195: return AbilityId::WATER_ABSORB;
     case 135: return AbilityId::VOLT_ABSORB;
@@ -190,10 +224,10 @@ AbilityId abilityForSpecies(const Species& species) {
     case 285: case 286: return AbilityId::EFFECT_SPORE;
     case 322: return AbilityId::SIMPLE;
     case 323: return AbilityId::SOLID_ROCK;
-    case 41: case 42: case 169: case 361: case 362: case 149:
+    case 41: case 42: case 169: case 215: case 361: case 362: case 149:
         return AbilityId::INNER_FOCUS;
     case 123: case 212: return AbilityId::TECHNICIAN;
-    case 129: return AbilityId::SWIFT_SWIM;
+    case 129: case 270: case 271: case 272: return AbilityId::SWIFT_SWIM;
     case 130: case 262: return AbilityId::INTIMIDATE;
     case 143: return AbilityId::THICK_FAT;
     case 151: case 196: case 197: case 280: case 281: case 282:
@@ -246,9 +280,15 @@ const Species* levelUpEvolutionTarget(const Species& species,
         ready = monster.affection >= FRIENDSHIP_EVOLUTION_THRESHOLD;
         break;
     case EvolutionMethod::BRANCH: {
+        if (species.id == WURMPLE) {
+            if (monster.level < species.evolveLevel) return nullptr;
+            // Use the stored IVs as an individual seed so the path survives saving.
+            const auto branch = (monster.ivPacked ^ (monster.ivPacked >> 15)) & 1U;
+            return findSpecies(branch ? CASCOON : species.evolveTo);
+        }
         // Eevee's daytime friendship branch shares the room's 06:00-18:00 day.
         const uint16_t minuteOfDay = gameMinutesTotal % (24U * 60U);
-        if (species.id == 133 &&
+        if (species.id == EEVEE &&
             monster.affection >= FRIENDSHIP_EVOLUTION_THRESHOLD &&
             minuteOfDay >= 6U * 60U && minuteOfDay < 18U * 60U) {
             return findSpecies(196);
@@ -261,22 +301,31 @@ const Species* levelUpEvolutionTarget(const Species& species,
     return ready ? findSpecies(species.evolveTo) : nullptr;
 }
 
-const Species* stoneEvolutionTarget(const Species& species, Game::ItemId stone) {
-    uint16_t targetId = 0;
-    if (species.evolveMethod == EvolutionMethod::BRANCH) {
-        // 伊布分支进化：火/水/雷之石分别对应火伊布/水伊布/雷伊布。
+const Species* stoneEvolutionTarget(const Species& species, EvolutionStone stone) {
+    if (species.evolveMethod == EvolutionMethod::BRANCH && species.id == EEVEE) {
         switch (stone) {
-        case Game::ItemId::FIRE_STONE: targetId = 136; break;
-        case Game::ItemId::WATER_STONE: targetId = 134; break;
-        case Game::ItemId::THUNDER_STONE: targetId = 135; break;
-        default: break;
+        case EvolutionStone::FIRE: return findSpecies(136);
+        case EvolutionStone::WATER: return findSpecies(134);
+        case EvolutionStone::THUNDER: return findSpecies(135);
+        default: return nullptr;
         }
-    } else if (species.evolveMethod == EvolutionMethod::STONE &&
-               stone == Game::ItemId::THUNDER_STONE) {
-        // 目前唯一的 STONE 进化链：皮卡丘 --雷之石--> 雷丘。
-        targetId = species.evolveTo;
     }
-    return targetId != 0 ? findSpecies(targetId) : nullptr;
+    if (species.evolveMethod != EvolutionMethod::STONE || stone == EvolutionStone::NONE) return nullptr;
+    EvolutionStone required = EvolutionStone::THUNDER;
+    switch (species.id) {
+    case 271: required = EvolutionStone::WATER; break;
+    case 274: required = EvolutionStone::LEAF; break;
+    }
+    return stone == required ? findSpecies(species.evolveTo) : nullptr;
+}
+
+const Species* stoneEvolutionTarget(const Species& species, Game::ItemId stone) {
+    switch (stone) {
+    case Game::ItemId::FIRE_STONE: return stoneEvolutionTarget(species, EvolutionStone::FIRE);
+    case Game::ItemId::WATER_STONE: return stoneEvolutionTarget(species, EvolutionStone::WATER);
+    case Game::ItemId::THUNDER_STONE: return stoneEvolutionTarget(species, EvolutionStone::THUNDER);
+    default: return nullptr;
+    }
 }
 
 const MoveInfo* findMove(Game::MoveId moveId) {
@@ -365,14 +414,12 @@ bool canLearnAsSpecialMove(const Species& species, Game::MoveId moveId) {
            isMoveBattleSupported(moveId);
 }
 
-namespace {
-bool isDirectEvolutionPredecessor(const Species& candidate,
-                                  const Species& target) {
-    if (candidate.evolveTo == target.id) return true;
-    if (candidate.evolveMethod != EvolutionMethod::BRANCH ||
-        candidate.id != 133) {
-        return false;
-    }
+bool isDirectEvolutionTarget(const Species& source, const Species& target) {
+    if (!target.id) return false;
+    if (source.evolveTo == target.id) return true;
+    if (source.evolveMethod != EvolutionMethod::BRANCH) return false;
+    if (source.id == WURMPLE) return target.id == CASCOON;
+    if (source.id != EEVEE) return false;
     switch (target.id) {
     case 134:  // Vaporeon
     case 135:  // Jolteon
@@ -385,6 +432,7 @@ bool isDirectEvolutionPredecessor(const Species& candidate,
     }
 }
 
+namespace {
 bool canRetainSpecialMoveFromLine(const Species& species, Game::MoveId moveId,
                                   uint8_t level, uint8_t depth) {
     uint8_t learnLevel = moveLearnLevelForSpecies(species, moveId);
@@ -396,7 +444,7 @@ bool canRetainSpecialMoveFromLine(const Species& species, Game::MoveId moveId,
     for (uint8_t index = 0; index < speciesCount(); ++index) {
         const Species& candidate = speciesTable()[index];
         if (candidate.id != species.id &&
-            isDirectEvolutionPredecessor(candidate, species) &&
+            isDirectEvolutionTarget(candidate, species) &&
             canRetainSpecialMoveFromLine(candidate, moveId, level, depth + 1)) {
             return true;
         }
@@ -427,7 +475,7 @@ bool tutorLineContains(const Species& species, Game::MoveId moveId, uint8_t dept
     if (depth >= speciesCount()) return false;
     for (uint8_t index = 0; index < speciesCount(); ++index) {
         const Species& candidate = speciesTable()[index];
-        if (candidate.id != species.id && isDirectEvolutionPredecessor(candidate, species) &&
+        if (candidate.id != species.id && isDirectEvolutionTarget(candidate, species) &&
             tutorLineContains(candidate, moveId, depth + 1)) return true;
     }
     return false;

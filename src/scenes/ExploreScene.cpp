@@ -41,7 +41,6 @@
 #include "game/ExploreRouteGeometry.h"
 #include "game/ExploreRunRules.h"
 #include "game/ExplorePickupRules.h"
-#include "game/FriendshipPity.h"
 #include "game/FriendshipService.h"
 #include "game/FriendshipSystem.h"
 #include "game/GameRandom.h"
@@ -232,13 +231,6 @@ static constexpr uint8_t ROUTE_MAP_COUNT = sizeof(ROUTE_MAPS) / sizeof(ROUTE_MAP
 static_assert(ROUTE_MAP_COUNT == Game::EXPLORE_AREA_COUNT,
               "route tables and persistent pool counters must stay aligned");
 
-const EncounterEntry* findEncounterEntry(const RouteMap& map, uint16_t speciesId) {
-    for (uint8_t i = 0; i < map.encounterCount; ++i) {
-        if (map.encounters[i].speciesId == speciesId) return &map.encounters[i];
-    }
-    return nullptr;
-}
-
 constexpr uint8_t mapCountForRoll(const RouteMap& map, uint8_t roll) {
     return ExploreRunRules::mapCountForRoll(map.minMapCount, map.maxMapCount, roll);
 }
@@ -425,31 +417,6 @@ PokemonSprites::WalkDirection inwardDirection(ExploreMapGenerator::Edge edge) {
     }
     return PokemonSprites::WalkDirection::DOWN;
 }
-
-const EncounterEntry* rollEncounterEntry(const RouteMap& map) {
-    if (!map.encounters || map.encounterCount == 0) return nullptr;
-    uint32_t total = 0;
-    for (uint8_t i = 0; i < map.encounterCount; ++i) {
-        total += map.encounters[i].weight;
-    }
-    if (total == 0) return nullptr;
-
-    uint32_t roll = static_cast<uint32_t>(GameRandom::random(static_cast<long>(total)));
-    for (uint8_t i = 0; i < map.encounterCount; ++i) {
-        if (roll < map.encounters[i].weight) return &map.encounters[i];
-        roll -= map.encounters[i].weight;
-    }
-    return nullptr;
-}
-
-// 活跃池内滚点：稀有成员按 weight × RARE_ROLL_BONUS 计（§7.4 / §7.9.3）
-const ExplorePool::PoolEntry* rollPoolEntry(const ExplorePool::Pool& pool) {
-    uint32_t total = ExplorePool::poolWeightTotal(pool);
-    if (total == 0) return nullptr;
-
-    uint32_t roll = static_cast<uint32_t>(GameRandom::random(static_cast<long>(total)));
-    return ExplorePool::entryForRoll(pool, roll);
-}
 }
 
 void ExploreScene::onEnter() {
@@ -478,7 +445,6 @@ void ExploreScene::onEnter() {
     iceSlideDy = 0;
     walkStepResolutionPending = false;
     battleIsBoss = false;
-    battleAllowsFriendship = true;
     battleFoodBond = 0;
     expeditionBossScheduled = false;
     expeditionNormalBossScheduled = false;
@@ -1428,10 +1394,10 @@ bool ExploreScene::rollRandomEncounter(bool guaranteed, bool bypassGate,
     // 黄金喷雾生效中：非保底随机遇敌不触发（保底/BOSS 不受影响）。
     if (!repelAllowsEncounter(guaranteed, repelActiveThisStep)) return false;
     if (!guaranteed && GameRandom::random(0, 10000) >= map.encounterChance) return false;
+    if (!rollEncounter()) return false;
     ++mapEncounterCount;
     encounterCooldownSteps = ENCOUNTER_COOLDOWN_STEP_COUNT;
     routeGuaranteedEncounterPending = false;
-    rollEncounter();
     return true;
 }
 
@@ -1522,7 +1488,6 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     ui.revealRouteSpecies(species.id);
     wild = &species;
     battleIsBoss = boss;
-    battleAllowsFriendship = true;
     wildRuntime = GameEngine::ins().createMonster(wild->id, level);
     wildHpMax = wildRuntime.hpMax;
     wildHp = wildHpMax;
@@ -1583,7 +1548,7 @@ void ExploreScene::beginRouteBossEncounter() {
     if (!routeBossPending || !finalRoute()) return;
     const Species* boss = findSpecies(expeditionBossSpeciesId);
     routeBossPending = false;
-    if (!boss) {
+    if (!boss || boss->assetsPending) {
         Platform::errorf("[ExploreBoss] missing species=%u area=%u\n",
                       expeditionBossSpeciesId, mapBlocks[currentMapBlock]);
         return;
@@ -1595,53 +1560,50 @@ void ExploreScene::beginRouteBossEncounter() {
                   expeditionBossLevel, expeditionBossExperiencePercent,
                   static_cast<unsigned>(expeditionSpecialKind));
     beginEncounter(*boss, expeditionBossLevel, true);
-    if (expeditionSpecialKind != ExploreSpecial::Kind::NONE) {
-        battleAllowsFriendship =
-            ExploreSpecial::configFor(expeditionSpecialKind).allowsFriendship;
-    }
 }
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
 void ExploreScene::beginDebugEncounter() {
     const Species* table = speciesTable();
-    uint8_t count = speciesCount();
-    const Species& opponent = count > 0
-        ? table[static_cast<uint8_t>(GameRandom::random(0, count))]
-        : starterSpecies();
+    const uint8_t count = speciesCount();
+    uint8_t playableCount = 0;
+    for (uint8_t index = 0; index < count; ++index)
+        if (!table[index].assetsPending) ++playableCount;
+    const Species* opponent = &starterSpecies();
+    uint8_t roll = static_cast<uint8_t>(GameRandom::random(0, playableCount));
+    for (uint8_t index = 0; index < count; ++index) {
+        if (table[index].assetsPending) continue;
+        if (roll-- == 0) {
+            opponent = &table[index];
+            break;
+        }
+    }
     uint8_t level = ExploreEncounterRules::levelForRoll(
         WILD_LEVEL_MIN, WILD_LEVEL_MAX, GameEngine::ins().activeMonster().level,
         static_cast<uint8_t>(GameRandom::random(0, 100)));
-    Platform::logf("[DebugBattle] opponent=%u level=%u\n", opponent.id, level);
-    beginEncounter(opponent, level);
+    Platform::logf("[DebugBattle] opponent=%u level=%u\n", opponent->id, level);
+    beginEncounter(*opponent, level);
 }
 #endif
 
-void ExploreScene::rollEncounter() {
+bool ExploreScene::rollEncounter() {
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
-    // 趟内只在活跃池快照中滚点（§7.8）；快照为空时退回全表兜底
-    const EncounterEntry* encounter = nullptr;
-    if (activePool.count > 0) {
-        const ExplorePool::PoolEntry* picked = rollPoolEntry(activePool);
-        encounter = picked ? findEncounterEntry(map, picked->speciesId) : nullptr;
-    } else {
-        encounter = rollEncounterEntry(map);
-    }
-    const Species* opponent = encounter ? findSpecies(encounter->speciesId) : nullptr;
-    if (!opponent) opponent = &starterSpecies();
+    const auto candidates = ExploreEncounters::battleCandidates(
+        {map.encounters, map.encounterCount}, activePool, generatedMap.habitat);
+    if (!candidates.total) return false;
+    const auto* encounter = candidates.at(static_cast<uint16_t>(GameRandom::random(0, candidates.total)));
+    if (!encounter) return false;
+    const Species* opponent = findSpecies(encounter->speciesId);
+    if (!opponent || opponent->assetsPending) return false;
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
-    uint8_t targetLevel = ExploreEncounterRules::targetLevel(
+    const uint8_t targetLevel = ExploreEncounterRules::targetLevel(
         map.averageLevel, map.depthSpread, currentMapBlock, mapBlockCount,
         routeIndex, path.pointCount);
-    uint8_t wildLevel = encounter
-        ? ExploreEncounterRules::levelForRoll(
-            encounter->minLevel, encounter->maxLevel, targetLevel,
-            static_cast<uint8_t>(GameRandom::random(0, 100)))
-        : targetLevel;
-    if (!encounter) {
-        Platform::logf("[Explore] empty encounter table area=%u\n",
-                      static_cast<unsigned>(activeArea));
-    }
-    beginEncounter(*opponent, wildLevel);
+    const auto level = ExploreEncounterRules::levelForRoll(
+        encounter->minLevel, encounter->maxLevel, targetLevel,
+        static_cast<uint8_t>(GameRandom::random(0, 100)));
+    beginEncounter(*opponent, level);
+    return true;
 }
 
 void ExploreScene::clearBattleLogs() {
@@ -2505,8 +2467,9 @@ void ExploreScene::finishWildFaint() {
     finishRoamingEncounter();
     Game::FriendshipService::OfferResult friendshipOffer =
         Game::FriendshipService::evaluateOffer(
-            state, *wild, wildRuntime, battleIsBoss,
-            battleAllowsFriendship, battleFoodBond,
+            engine.gameState(), *wild, wildRuntime, battleIsBoss,
+            battleIsBoss ? expeditionSpecialKind : ExploreSpecial::Kind::NONE,
+            battleFoodBond,
 #if STICKMON_ENABLE_DEBUG_FEATURES
             debugBattleMode
 #else
@@ -2531,12 +2494,7 @@ void ExploreScene::finishWildFaint() {
         }
     }
 
-    // 按物种独立累计失败层数；加成已叠加在最终结交概率上（§7.9.4）。
-    if (friendshipOffer.eligible && !friendshipOfferPending) {
-        Game::FriendshipService::recordFailure(
-            engine.gameState(), wild->id);
-        engine.markDirty(SaveUrgency::DEFERRED);
-    }
+    if (friendshipOffer.pityChanged) engine.markDirty(SaveUrgency::DEFERRED);
 }
 
 void ExploreScene::attackWild() {
@@ -2790,23 +2748,14 @@ void ExploreScene::resolveFriendshipOffer(bool confirmed) {
 #else
         uint8_t metArea = mapBlocks[currentMapBlock];
 #endif
-        if (!engine.recordFriendContact(wildRuntime, metArea, &contactSlot)) {
+        const auto special = battleIsBoss ? expeditionSpecialKind : ExploreSpecial::Kind::NONE;
+        if (!engine.recordFriendContact(wildRuntime, metArea, &contactSlot, special)) {
             friendshipStep = FriendshipStep::FINISHING;
             enqueueBattleLog(Ui::Explore::FRIEND_CONTACTS_FULL);
             return;
         }
         friendshipContactIndex = contactSlot;
         friendshipStep = FriendshipStep::CONTACT_ACQUIRED;
-        // 结交成功只清零当前物种，其他物种的累积不受影响。
-        {
-            Game::GameState& save = engine.gameState();
-            int8_t pityIndex = FriendshipPity::indexFor(wild->id);
-            if (pityIndex >= 0 &&
-                save.friendshipPityFailCounts[pityIndex] != 0) {
-                Game::FriendshipService::recordSuccess(save, wild->id);
-                engine.markDirty(SaveUrgency::DEFERRED);
-            }
-        }
         snprintf(resultBuf, sizeof(resultBuf),
                  Ui::Explore::FRIEND_CONTACT_ACQUIRED_FMT, wild->name);
         enqueueBattleLog(resultBuf, BattleLogCue::CONTACT);

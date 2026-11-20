@@ -16,7 +16,7 @@ class FriendshipServiceTests(unittest.TestCase):
             subprocess.run(
                 [
                     "c++",
-                    "-std=c++11",
+                    "-std=c++17",
                     "-Isrc",
                     "tools/friendship_service_host.cpp",
                     "src/game/FriendshipService.cpp",

@@ -2,6 +2,7 @@
 // 固件与测试共用 ExploreEncounters.h，避免区域表发生漂移。
 #include <cstdint>
 #include <cstdio>
+#include <vector>
 
 #include "game/ExploreAreaCatalog.h"
 #include "game/ExploreEncounterRules.h"
@@ -44,8 +45,9 @@ uint8_t toSource(const TestTable& table, ExplorePool::SourceEntry* out) {
     for (uint8_t i = 0; i < table.count; ++i) {
         out[i] = ExplorePool::SourceEntry{
             table.entries[i].speciesId,
-            table.entries[i].weight,
-            table.entries[i].rarity,
+            table.entries[i].weight(),
+            table.entries[i].rarity(),
+            table.entries[i].habitat,
         };
     }
     return table.count;
@@ -62,11 +64,43 @@ bool samePool(const ExplorePool::Pool& a, const ExplorePool::Pool& b) {
     for (uint8_t i = 0; i < a.count; ++i) {
         if (a.entries[i].speciesId != b.entries[i].speciesId ||
             a.entries[i].weight != b.entries[i].weight ||
-            a.entries[i].rarity != b.entries[i].rarity) {
+            a.entries[i].rarity != b.entries[i].rarity ||
+            a.entries[i].habitat != b.entries[i].habitat) {
             return false;
         }
     }
     return true;
+}
+
+bool checkEncounterRecords() {
+    const uint8_t legacyFish[] = {129, 0, 12, 7, 17, uint8_t(Rarity::NORMAL)};
+    ContentData::Reader legacy{legacyFish, sizeof(legacyFish)};
+    Entry fish;
+    if (!legacy(fish) || legacy.position != sizeof(legacyFish) ||
+        fish.speciesId != 129 || fish.minLevel != 7 || fish.maxLevel != 17 ||
+        fish.habitat != ExploreHabitat::OPEN_WATER || fish.weight() != 8) return false;
+
+    Entry cave{41, 10, 20, ExploreHabitat::CAVE | ExploreHabitat::OPEN_WATER};
+    std::vector<uint8_t> bytes;
+    ContentData::Writer writer{&bytes, [](void* context, uint8_t value) {
+        static_cast<std::vector<uint8_t>*>(context)->push_back(value);
+    }};
+    if (!writer(cave) || bytes.size() != sizeof(legacyFish)) return false;
+    ContentData::Reader reader{bytes.data(), bytes.size()};
+    Entry decoded;
+    if (!reader(decoded) || reader.position != bytes.size() ||
+        decoded.speciesId != cave.speciesId || decoded.minLevel != cave.minLevel ||
+        decoded.maxLevel != cave.maxLevel || decoded.habitat != cave.habitat) return false;
+
+    bytes.clear();
+    fish.habitat = 0;
+    if (!writer(fish) || bytes.size() != sizeof(legacyFish)) return false;
+    ContentData::Reader withoutHabitat{bytes.data(), bytes.size()};
+    if (!withoutHabitat(decoded) || decoded.habitat) return false;
+
+    bytes[5] |= 0x40;
+    ContentData::Reader invalid{bytes.data(), bytes.size()};
+    return !invalid(decoded);
 }
 
 } // namespace
@@ -92,23 +126,59 @@ int main() {
         return fail(2, "explicit rarity split");
     }
 
+    if (ExploreEncounters::GRASS_PATH[0].weight() != 12 ||
+        ExploreEncounters::CREEK_SLOPE[2].weight() != 8 ||
+        ExploreEncounters::TALL_GRASS_PARK[2].weight() != 2 ||
+        ExploreEncounters::FROST_CRYSTAL_CAVE[4].weight() != 5 ||
+        ExploreEncounters::MIST_FOREST_PATH[6].weight() != 3 ||
+        ExploreEncounters::ANCIENT_WATERFALL_VALLEY[11].weight() != 1) {
+        return fail(25, "six rarity tiers supply automatic base weights");
+    }
+
+    const auto creek = ExploreEncounters::tableForArea(1);
+    const ExplorePool::Pool fishAndBird{{{129, 8, Rarity::NORMAL},
+                                         {278, 8, Rarity::NORMAL}}, 2};
+    const auto dry = ExploreEncounters::battleCandidates(creek, fishAndBird, 0);
+    const auto wet = ExploreEncounters::battleCandidates(creek, fishAndBird, ExploreHabitat::OPEN_WATER);
+    if (dry.total != 8 || dry.at(0)->speciesId != 278 ||
+        wet.total != 16 || wet.at(0)->speciesId != 129 || wet.at(8)->speciesId != 278) {
+        return fail(26, "fish are restricted to maps with open water");
+    }
+    const ExplorePool::Pool fishOnly{{{129, 8, Rarity::NORMAL}}, 1};
+    if (ExploreEncounters::battleCandidates(creek, fishOnly, 0).total != 0)
+        return fail(27, "filtered active pool does not fall back to the region table");
+    const Entry pondAndCave[] = {{130, 50, 60, ExploreHabitat::OPEN_WATER},
+                                 {41, 50, 60, ExploreHabitat::CAVE}};
+    const ExplorePool::Pool mixed{{{130, 3, Rarity::RARE}, {41, 5, Rarity::UNCOMMON}}, 2};
+    const auto table = ExploreEncounters::table(pondAndCave);
+    const auto pond = ExploreEncounters::battleCandidates(table, mixed, ExploreHabitat::OPEN_WATER);
+    const auto cave = ExploreEncounters::battleCandidates(table, mixed, ExploreHabitat::CAVE);
+    const auto fallback = ExploreEncounters::battleCandidates(table, {}, ExploreHabitat::OPEN_WATER);
+    if (pond.total != 9 || pond.at(8) != &pondAndCave[0] || pond.at(9) ||
+        cave.total != 5 || cave.at(4) != &pondAndCave[1] ||
+        fallback.total != 3 || fallback.at(2) != &pondAndCave[0])
+        return fail(28, "cave gate, rare bonus, and empty snapshot fallback");
+    if (!checkEncounterRecords())
+        return fail(29, "legacy and current serialized encounter rows");
+
     // 3. 六区数据约束：权重、等级、分池容量、跨区稀有度和特殊终段隔离。
+    constexpr uint8_t weights[] = {12, 8, 5, 3, 2, 1};
     uint16_t seenSpecies[128] = {};
     Rarity seenRarity[128] = {};
     uint8_t seenCount = 0;
     const uint16_t forbidden[] = {76, 94, 169, 212};
     for (uint8_t area = 0; area < AREA_COUNT; ++area) {
-        uint32_t weightTotal = 0;
         uint8_t commons = 0;
         uint8_t rares = 0;
         for (uint8_t i = 0; i < TABLES[area].count; ++i) {
             const Entry& entry = TABLES[area].entries[i];
-            weightTotal += entry.weight;
+            if (entry.weight() != weights[static_cast<uint8_t>(entry.rarity())])
+                return fail(6, "entry weight must derive from its rarity", entry.speciesId);
             if (entry.minLevel < 1 || entry.minLevel > entry.maxLevel ||
                 entry.maxLevel > Game::LEVEL_MAX) {
                 return fail(3, "invalid encounter level range", entry.speciesId);
             }
-            ExplorePool::isRare(entry.rarity) ? ++rares : ++commons;
+            ExplorePool::isRare(entry.rarity()) ? ++rares : ++commons;
 
             for (uint8_t j = 0;
                  j < static_cast<uint8_t>(sizeof(forbidden) /
@@ -124,7 +194,7 @@ int main() {
             for (uint8_t j = 0; j < seenCount; ++j) {
                 if (seenSpecies[j] != entry.speciesId) continue;
                 known = true;
-                if (seenRarity[j] != entry.rarity) {
+                if (seenRarity[j] != entry.rarity()) {
                     return fail(5, "cross-area rarity mismatch",
                                 entry.speciesId);
                 }
@@ -132,12 +202,9 @@ int main() {
             }
             if (!known) {
                 seenSpecies[seenCount] = entry.speciesId;
-                seenRarity[seenCount] = entry.rarity;
+                seenRarity[seenCount] = entry.rarity();
                 ++seenCount;
             }
-        }
-        if (weightTotal != 100) {
-            return fail(6, "table weight total != 100", area);
         }
         if (commons != TABLES[area].expectedCommon ||
             rares != TABLES[area].expectedRare) {
@@ -145,10 +212,10 @@ int main() {
         }
     }
 
-    // 低权重尾立仍是普通池，高权重皮卡丘仍是稀有池。
-    if (ExplorePool::isRare(ExploreEncounters::CREEK_SLOPE[8].rarity) ||
+    // 区域条目复用物种稀有度。
+    if (ExplorePool::isRare(ExploreEncounters::CREEK_SLOPE[8].rarity()) ||
         !ExplorePool::isRare(
-            ExploreEncounters::TALL_GRASS_PARK[2].rarity)) {
+            ExploreEncounters::TALL_GRASS_PARK[2].rarity())) {
         return fail(8, "rarity must not be derived from weight");
     }
 
@@ -184,7 +251,8 @@ int main() {
                 for (uint8_t s = 0; s < sourceCount; ++s) {
                     if (source[s].speciesId == entry.speciesId &&
                         source[s].weight == entry.weight &&
-                        source[s].rarity == entry.rarity) {
+                        source[s].rarity == entry.rarity &&
+                        source[s].habitat == entry.habitat) {
                         inSource = true;
                         break;
                     }

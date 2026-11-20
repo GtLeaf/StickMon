@@ -58,6 +58,8 @@ class SpeciesProgressionTests(unittest.TestCase):
         species_source = (ROOT / "src" / "game" / "Species.cpp").read_text()
         target_ids = set()
         for line in species_source.splitlines():
+            if re.search(r",\s*true\s*},\s*$", line):
+                continue  # Pending species cannot be obtained until their artwork is ready.
             match = re.search(
                 r"\bEV\([^)]*\),\s*(\d+),\s*EvolutionMethod::", line
             )

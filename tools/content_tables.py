@@ -27,7 +27,7 @@ SCHEMAS = {
  'ExploreEditorTiles': ('ExploreEditorTiles', {'Tile':'source,depth,frame,frames'},
   [('TILES','Tile',156,'',21),('EXTRA_TILES','Tile',6,'',22)]),
  'ExploreRotatedTiles': ('ExploreRotatedTiles', {'Tile':'depth'}, [('TILES','Tile',107,'',23)]),
- 'ExploreEncounters': ('ExploreEncounters', {'Entry':'speciesId,weight,minLevel,maxLevel,rarity'},
+ 'ExploreEncounters': ('ExploreEncounters', {},
   [(n,'Entry',c,'',30+i) for i,(n,c) in enumerate(zip(
    ('GRASS_PATH','CREEK_SLOPE','TALL_GRASS_PARK','FROST_CRYSTAL_CAVE','MIST_FOREST_PATH','ANCIENT_WATERFALL_VALLEY'),(10,15,19,13,13,14)))]),
  'ExploreBoss': ('ExploreBoss', {'Config':'speciesIds,level,experiencePercent'}, [('CONFIGS','Config',6,'',36)]),

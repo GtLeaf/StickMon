@@ -589,44 +589,18 @@ bool ExploreSession::beginEncounter(Game::GameState& gameState, uint8_t area,
     if (boss && speciesOverride != 0) {
         species = findSpecies(speciesOverride);
     } else {
-        ExploreEncounters::Table table =
-            ExploreEncounters::tableForArea(area_);
-        if (!table.entries || table.count == 0) return false;
-        const ExploreEncounters::Entry* picked = nullptr;
-        if (state_.exploreRoutePool.count > 0) {
-            const uint32_t totalWeight =
-                ExplorePool::poolWeightTotal(state_.exploreRoutePool);
-            if (totalWeight == 0) return false;
-            const ExplorePool::PoolEntry* poolEntry = ExplorePool::entryForRoll(
-                state_.exploreRoutePool, GameRandom::range(0, totalWeight));
-            if (!poolEntry) return false;
-            for (uint8_t index = 0; index < table.count; ++index) {
-                if (table.entries[index].speciesId == poolEntry->speciesId) {
-                    picked = &table.entries[index];
-                    break;
-                }
-            }
-        } else {
-            uint32_t totalWeight = 0;
-            for (uint8_t index = 0; index < table.count; ++index) {
-                totalWeight += table.entries[index].weight;
-            }
-            if (totalWeight == 0) return false;
-            uint32_t roll = GameRandom::range(0, totalWeight);
-            for (uint8_t index = 0; index < table.count; ++index) {
-                if (roll < table.entries[index].weight) {
-                    picked = &table.entries[index];
-                    break;
-                }
-                roll -= table.entries[index].weight;
-            }
-        }
+        const auto candidates = ExploreEncounters::battleCandidates(
+            ExploreEncounters::tableForArea(area_), state_.exploreRoutePool,
+            state_.exploreRouteMap.habitat);
+        if (!candidates.total) return false;
+        const auto* picked = candidates.at(
+            static_cast<uint16_t>(GameRandom::range(0, candidates.total)));
         if (!picked) return false;
         species = findSpecies(picked->speciesId);
         levelMinimum = picked->minLevel;
         levelMaximum = picked->maxLevel;
     }
-    if (!species) return false;
+    if (!species || species->assetsPending) return false;
     uint8_t level = levelOverride;
     if (level == 0) {
         const ExploreMapGenerator::Path& path =

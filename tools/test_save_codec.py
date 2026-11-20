@@ -16,7 +16,7 @@ class SaveCodecTests(unittest.TestCase):
             subprocess.run(
                 [
                     "c++",
-                    "-std=c++11",
+                    "-std=c++17",
                     "-Wall",
                     "-Wextra",
                     "-Werror",

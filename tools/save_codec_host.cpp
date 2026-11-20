@@ -1,4 +1,5 @@
 #include "core/SaveCodec.h"
+#include "game/FriendshipPity.h"
 #include "save_schema1_fabricator.h"
 
 #include <algorithm>
@@ -56,7 +57,9 @@ Game::GameState makeState() {
     state.settings.vibrationOn = true;
     state.settings.leftHanded = true;
     state.explorePoolRerollCounts[2] = 4;
-    state.friendshipPityFailCounts[3] = 5;
+    state.friendshipPity.entries[0] = {381, 2};
+    state.friendshipPity.entries[1] = {151, 5};
+    state.friendshipPity.entries[2] = {249, 1};
     state.specialBossDefeatedMask = 0x15;
     state.roamingRerollCounts[1] = 2;
     state.tutorialFlags = 0xA5;
@@ -163,7 +166,17 @@ void verifyRoundTrip() {
     uint32_t sequence = 0;
     assert(SaveCodec::decode(encoded, length, decoded, &sequence));
     assert(sequence == 0x12345678);
-    assert(SaveCodec::SCHEMA_VERSION == 9);
+    assert(SaveCodec::SCHEMA_VERSION == 10);
+    assert(length == 2516 - 38 + 9);
+    assert(encoded[1456] == 0x7d && encoded[1457] == 1 && encoded[1458] == 2);
+    assert(decoded.state.friendshipPity.entries[0].speciesId == 381);
+    assert(decoded.state.friendshipPity.entries[1].speciesId == 151);
+    assert(decoded.state.friendshipPity.entries[2].speciesId == 249);
+    auto pity = decoded.state.friendshipPity;
+    assert(FriendshipPity::recordFailure(pity, 380));
+    assert(FriendshipPity::failuresFor(pity, 249) == 0);
+    assert(FriendshipPity::failuresFor(pity, 381) == 2);
+    assert(FriendshipPity::failuresFor(pity, 151) == 5);
     assert(decoded.state.marketSupply.pendingAdvice == 2);
     assert(decoded.state.marketSupply.stockPlan == 4);
     assert(decoded.state.marketSupply.boxRoll2 == 73);
@@ -319,16 +332,29 @@ void verifyAllLegacySchemasPreservePrefix() {
     uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {};
     size_t length = 0;
     assert(SaveCodec::encode(state, makeView(), 17, encoded, sizeof(encoded), length));
-    for (uint16_t schema = 1; schema <= 8; ++schema) {
+    for (uint16_t schema = 1; schema <= 9; ++schema) {
         std::vector<uint8_t> legacy;
         assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded, length, legacy, schema));
+        legacy[SaveTestUtil::LEGACY_PITY_OFFSET + 3] = 5;
+        legacy[SaveTestUtil::LEGACY_PITY_OFFSET + 34] = 5;
+        legacy[SaveTestUtil::LEGACY_PITY_OFFSET + 35] = 4;
+        legacy[SaveTestUtil::LEGACY_PITY_OFFSET + 36] = 1;
+        legacy[SaveTestUtil::LEGACY_PITY_OFFSET + 37] = 8;
+        const uint16_t crc = SaveTestUtil::blobCrc16(legacy.data(), legacy.size());
+        legacy[14] = static_cast<uint8_t>(crc);
+        legacy[15] = static_cast<uint8_t>(crc >> 8);
         SaveCodec::Snapshot decoded;
         assert(SaveCodec::decode(legacy.data(), legacy.size(), decoded));
         assert(decoded.state.version == Game::SAVE_VERSION);
         assert(decoded.state.coins == state.coins && decoded.state.bag.candy == 7);
-        assert(decoded.state.marketSupply.pendingAdvice == 0);
-        assert(decoded.state.marketSupply.stockPlan == 0);
-        assert(decoded.state.marketSupply.boxRoll2 == 0);
+        assert(decoded.state.marketSupply.pendingAdvice == (schema == 9 ? 2 : 0));
+        assert(decoded.state.marketSupply.stockPlan == (schema == 9 ? 4 : 0));
+        assert(decoded.state.marketSupply.boxRoll2 == (schema == 9 ? 73 : 0));
+        const auto& pity = decoded.state.friendshipPity;
+        assert(pity.entries[0].speciesId == 151 && pity.entries[0].failures == 4);
+        assert(pity.entries[1].speciesId == 380 && pity.entries[1].failures == 1);
+        assert(pity.entries[2].speciesId == 381 && pity.entries[2].failures == 5);
+        for (uint8_t old : decoded.state.legacyFriendshipPity) assert(old == 0);
         if (schema <= 7) {
             assert(decoded.state.marketSeason.periodDay == Game::MARKET_PERIOD_NONE);
             for (auto item : decoded.state.marketSeason.items) assert(item == 255);
@@ -351,7 +377,8 @@ void verifyAllLegacySchemasPreservePrefix() {
         if (schema >= 7) {
             assert(decoded.state.marketShop.boxBought == 1);
             assert(decoded.state.marketShop.boxRoll == 99);
-            assert(length - legacy.size() == (schema == 7 ? 42 : 3));
+            const size_t extensionsRemoved = schema == 7 ? 42 : schema == 8 ? 3 : 0;
+            assert(legacy.size() + extensionsRemoved == length + 38 - 9);
         }
         assert(decoded.view.secondary.foodRetryRemainingMs == 9999);
     }

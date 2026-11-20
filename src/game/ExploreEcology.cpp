@@ -39,13 +39,7 @@ Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
     const uint16_t base = map.layers[0][cell];
     const uint16_t overlay = map.layers[1][cell];
     const uint16_t top = map.layers[2][cell];
-    if ((!top || ExploreTileSemantics::bridgeDeck(top)) &&
-        (ExploreAncientValley::openWater(overlay) || overlay == 96 ||
-         ExploreValleyData::flag(overlay, 8))) return Surface::WATER;
-    // A bridge leaves the river connected below its deck. Never reinterpret
-    // shore, waterfall, rock or a dry bridge approach as swimming habitat.
-    if (!overlay && (!top || ExploreTileSemantics::bridgeDeck(top)) &&
-        (base == 48 || base == 144 || base == 1097)) return Surface::WATER;
+    if (ExploreTileSemantics::openWaterCell(base, overlay, top)) return Surface::WATER;
     if (map.layers[2][cell] && !ExploreTileSemantics::groundBehindDecoration(
             map.layers[2][cell], 2)) return Surface::NONE;
     if (overlay && !ExploreTileSemantics::groundBehindDecoration(overlay, 1))
@@ -150,7 +144,7 @@ bool Simulation::occupied(float x, float y, uint8_t except) const {
 }
 
 void Simulation::reset(const ExploreMapGenerator::Map& map, uint8_t pathIndex,
-                        const ExplorePool::Pool& pool, uint8_t hiddenPoolMask,
+                        const ExplorePool::Pool& areaPool, uint8_t hiddenPoolMask,
                         uint32_t nowMs) {
     count_ = 0;
     group_ = {};
@@ -161,7 +155,18 @@ void Simulation::reset(const ExploreMapGenerator::Map& map, uint8_t pathIndex,
     std::fill_n(solidFootprint_, ExploreMapGenerator::CELL_COUNT, false);
     buildFlightHabitat(map);
     if (map.areaIndex > ExploreMapGenerator::ANCIENT_WATERFALL_VALLEY_AREA ||
-        pathIndex >= map.pathCount || pool.count == 0) return;
+        pathIndex >= map.pathCount || areaPool.count == 0) return;
+
+    ExplorePool::Pool pool{};
+    uint8_t hidden = 0;
+    for (uint8_t i = 0; i < areaPool.count && i < ExplorePool::POOL_CAP; ++i) {
+        const auto& member = areaPool.entries[i];
+        if (!ExploreHabitat::matches(member.habitat, map.habitat)) continue;
+        if (hiddenPoolMask & (1U << i)) hidden |= 1U << pool.count;
+        pool.entries[pool.count++] = member;
+    }
+    hiddenPoolMask = hidden;
+    if (!pool.count) return;
     const auto& path = map.paths[pathIndex];
     if (path.pointCount < 2) return;
     for (uint16_t cell = 0; cell < ExploreMapGenerator::CELL_COUNT; ++cell) {
@@ -179,7 +184,7 @@ void Simulation::reset(const ExploreMapGenerator::Map& map, uint8_t pathIndex,
     }
     uint32_t random = map.seed ^ 0xECA10579U;
     if (random == 0) random = 1;
-    const uint8_t poolCount = std::min<uint8_t>(pool.count, ExplorePool::POOL_CAP);
+    const uint8_t poolCount = pool.count;
     const uint8_t requested = std::min<uint8_t>(poolCount, 2 + (next(random) % 4 == 0));
     if (spawnGroup(path, pool, hiddenPoolMask, map.areaIndex, random)) return;
     uint8_t usedMask = 0;

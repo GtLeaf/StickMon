@@ -47,14 +47,16 @@ bool hasLearnsetEntry(const Species& species, uint8_t level, Game::MoveId moveId
 // Derive encounter floors from the real evolution graph, including level
 // requirements inherited through friendship, stone and trade evolutions.
 uint8_t minimumEncounterLevel(uint16_t speciesId, uint8_t depth = 0) {
-    if (!findSpecies(speciesId) || depth >= speciesCount()) return Game::LEVEL_MAX + 1;
+    const auto* species = findSpecies(speciesId);
+    if (!species || depth >= speciesCount()) return Game::LEVEL_MAX + 1;
     uint8_t minimum = 1;
     for (uint8_t index = 0; index < speciesCount(); ++index) {
         const auto& parent = speciesTable()[index];
-        if (parent.evolveTo != speciesId) continue;
+        if (!isDirectEvolutionTarget(parent, *species)) continue;
         const uint8_t inherited = minimumEncounterLevel(parent.id, depth + 1);
         if (inherited > minimum) minimum = inherited;
-        if (parent.evolveMethod == EvolutionMethod::LEVEL && parent.evolveLevel > minimum) {
+        if ((parent.evolveMethod == EvolutionMethod::LEVEL ||
+             parent.evolveMethod == EvolutionMethod::BRANCH) && parent.evolveLevel > minimum) {
             minimum = parent.evolveLevel;
         }
     }
@@ -70,9 +72,10 @@ bool encounterLevelValid(const char* kind, uint8_t area, uint16_t speciesId, uin
 }
 
 bool encounterLevelsRespectEvolution() {
-    for (const auto& expected : std::array<std::array<uint16_t, 2>, 9>{{
+    for (const auto& expected : std::array<std::array<uint16_t, 2>, 13>{{
              {{130, 20}}, {{282, 30}}, {{3, 32}}, {{279, 25}}, {{162, 15}},
-             {{17, 18}}, {{169, 22}}, {{94, 25}}, {{26, 1}}}}) {
+             {{17, 18}}, {{169, 22}}, {{94, 25}}, {{26, 1}},
+             {{266, 7}}, {{268, 7}}, {{267, 10}}, {{275, 14}}}}) {
         if (minimumEncounterLevel(expected[0]) != expected[1]) return false;
     }
     for (uint8_t area = 0; area < ExploreBoss::AREA_COUNT; ++area) {
@@ -89,9 +92,73 @@ bool encounterLevelsRespectEvolution() {
     return true;
 }
 
+bool expandedEvolutionFamiliesWork() {
+    constexpr uint16_t expected[] = {
+        124, 214, 215, 220, 221, 225, 238, 263, 264, 265, 266, 267, 268,
+        269, 270, 271, 272, 273, 274, 275, 299, 302, 339, 340, 341, 342,
+        355, 356, 359,
+    };
+    for (uint16_t id : expected) {
+        const auto* species = findSpecies(id);
+        if (!species) {
+            std::fprintf(stderr, "new species %u is missing\n", unsigned(id));
+            return false;
+        }
+        if (!species->assetsPending) return false;
+    }
+    constexpr uint16_t byLevel[][3] = {
+        {220, 221, 33}, {238, 124, 30}, {263, 264, 20},
+        {266, 267, 10}, {268, 269, 10}, {270, 271, 14},
+        {273, 274, 14}, {339, 340, 30}, {341, 342, 30}, {355, 356, 37},
+    };
+    Game::MonsterRuntime monster{};
+    for (const auto& rule : byLevel) {
+        monster.level = uint8_t(rule[2] - 1);
+        const Species& source = *findSpecies(rule[0]);
+        if (levelUpEvolutionTarget(source, monster, 0)) return false;
+        ++monster.level;
+        if (levelUpEvolutionTarget(source, monster, 0) != findSpecies(rule[1])) return false;
+    }
+    const Species& wurmple = *findSpecies(265);
+    monster.level = 6;
+    if (levelUpEvolutionTarget(wurmple, monster, 0)) return false;
+    monster.level = 7;
+    monster.ivPacked = 0;
+    if (levelUpEvolutionTarget(wurmple, monster, 0) != findSpecies(266)) return false;
+    monster.ivPacked = 1;
+    if (levelUpEvolutionTarget(wurmple, monster, 0) != findSpecies(268)) return false;
+    monster.level = 12;
+    if (levelUpEvolutionTarget(wurmple, monster, 18 * 60) != findSpecies(268)) return false;
+    if (!isDirectEvolutionTarget(wurmple, *findSpecies(266)) ||
+        !isDirectEvolutionTarget(wurmple, *findSpecies(268))) return false;
+
+    const Species& lombre = *findSpecies(271);
+    if (stoneEvolutionTarget(lombre, Game::ItemId::WATER_STONE) != findSpecies(272) ||
+        stoneEvolutionTarget(lombre, Game::ItemId::THUNDER_STONE)) return false;
+    const Species& nuzleaf = *findSpecies(274);
+    if (stoneEvolutionTarget(nuzleaf, EvolutionStone::LEAF) != findSpecies(275) ||
+        stoneEvolutionTarget(nuzleaf, Game::ItemId::WATER_STONE) ||
+        stoneEvolutionTarget(wurmple, Game::ItemId::FIRE_STONE)) return false;
+    Species legacyStoneSpecies = *findSpecies(25);
+    legacyStoneSpecies.id = 999;
+    if (stoneEvolutionTarget(legacyStoneSpecies, Game::ItemId::THUNDER_STONE) != findSpecies(26))
+        return false;
+    const Species& delibird = *findSpecies(225);
+    if (basicMoveIdForSpecies(delibird) != 217 || isMoveBattleSupported(217)) return false;
+    if (abilityForSpecies(wurmple) != AbilityId::SHIELD_DUST ||
+        abilityForSpecies(lombre) != AbilityId::SWIFT_SWIM) return false;
+    return true;
+}
+
 } // namespace
 
 int main() {
+    if (!expandedEvolutionFamiliesWork()) return 68;
+    if (findSpecies(151)->catchRate != 3) {
+        std::fputs("Mew's catch rate must match the roaming legendaries\n", stderr);
+        return 1;
+    }
+
     static_assert(sizeof(Game::MoveId) == 2, "official move ids require 16 bits");
     if (Game::LEVEL_MAX != 100) return 1;
     if (!encounterLevelsRespectEvolution()) return 67;
@@ -114,7 +181,7 @@ int main() {
         }
     }
 
-    if (speciesCount() != 64) return 6;
+    if (speciesCount() != 93) return 6;
     for (uint8_t speciesIndex = 0; speciesIndex < speciesCount(); ++speciesIndex) {
         const Species& species = speciesTable()[speciesIndex];
         const SpeciesLearnset* learnset = findLearnset(species.id);

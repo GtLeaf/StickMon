@@ -13,7 +13,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 10;
+static constexpr uint16_t SAVE_VERSION = 11;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 // debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
 // release 固件忽略这些位但必须原样保留。
@@ -43,7 +43,8 @@ static constexpr uint8_t ROOM_SOUR_FOOD_INDEX = 4;
 static constexpr uint8_t ROOM_BITTER_FOOD_INDEX = 5;
 static constexpr uint8_t ROOM_DRY_FOOD_INDEX = 6;
 static constexpr uint8_t EXPLORE_AREA_COUNT = 6;
-static constexpr uint8_t FRIENDSHIP_PITY_TRACKED_COUNT = 38;
+static constexpr uint8_t FRIENDSHIP_PITY_CAPACITY = 3;
+static constexpr uint8_t LEGACY_FRIENDSHIP_PITY_COUNT = 38;
 static constexpr uint8_t DAILY_CANDY_PURCHASE_CAP = 1;
 static constexpr uint32_t INITIAL_COINS = 1000;
 static constexpr uint32_t INITIAL_GAME_MINUTES = 7UL * 60UL;
@@ -375,6 +376,16 @@ struct MarketCareState {
 };
 static_assert(sizeof(MarketCareState) == 24, "market care save layout");
 
+struct FriendshipPityEntry {
+    uint16_t speciesId = 0;
+    uint8_t failures = 0;
+};
+
+struct FriendshipPityState {
+    // Most recent failure first. Empty slots go at the end.
+    FriendshipPityEntry entries[FRIENDSHIP_PITY_CAPACITY];
+};
+
 struct GameState {
     uint32_t magic = SAVE_MAGIC;
     uint16_t version = SAVE_VERSION;
@@ -405,8 +416,8 @@ struct GameState {
     PlayerSettings settings;
     // 栖息地轮换：每区域活跃池重抽计数，击败区域头目 +1（§7.2/§7.6）
     uint8_t explorePoolRerollCounts[EXPLORE_AREA_COUNT] = {};
-    // 结交累积：按白名单物种独立记录，索引见 FriendshipPity.h（§7.9.4）
-    uint8_t friendshipPityFailCounts[FRIENDSHIP_PITY_TRACKED_COUNT] = {};
+    // Reserved for loading the frozen raw v1–v10 state prefix.
+    uint8_t legacyFriendshipPity[LEGACY_FRIENDSHIP_PITY_COUNT] = {};
     // 特殊精灵：bit0=卡比兽，bit1=拉帝亚斯，bit2=拉帝欧斯（§八）
     uint8_t specialBossDefeatedMask = 0;
     // [0]=拉帝亚斯，[1]=拉帝欧斯；游荡战结束后递增
@@ -445,6 +456,7 @@ struct GameState {
         uint8_t boxRoll2 = 0;
         uint8_t reserved = 0;
     } marketSupply;
+    FriendshipPityState friendshipPity;
 };
 static_assert(offsetof(GameState, careRewardDay) == 1572,
               "v5 care fields must follow the frozen v4 layout");
@@ -458,7 +470,10 @@ static_assert(offsetof(GameState, marketSeason) == 2480,
               "v9 extension must preserve the frozen v8 prefix");
 static_assert(offsetof(GameState, marketSupply) == 2524,
               "v10 extension must preserve the frozen v9 prefix");
-static_assert(sizeof(GameState) == 2528, "v10 save size changed");
+static_assert(offsetof(GameState, legacyFriendshipPity) == 1518,
+              "legacy raw friendship counters must retain their offset");
+static_assert(offsetof(GameState, friendshipPity) == 2528,
+              "v11 extension must preserve the frozen v10 prefix");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
 static_assert(offsetof(GameState, tutorialFlags) == 1559,

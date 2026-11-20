@@ -158,7 +158,6 @@ private:
     FriendshipStep friendshipStep = FriendshipStep::CONTACT_INTRO;
     uint8_t friendshipContactIndex = 0xFF;
     bool battleIsBoss = false;
-    bool battleAllowsFriendship = true;
     uint8_t battleFoodBond = 0;
     bool foodThrowActive = false;
     uint8_t foodThrowIndex = 0;
@@ -300,7 +299,7 @@ private:
 #if STICKMON_ENABLE_DEBUG_FEATURES
     void beginDebugEncounter();
 #endif
-    void rollEncounter();
+    bool rollEncounter();
     bool rollRandomEncounter(bool guaranteed, bool bypassGate,
                              bool repelActiveThisStep);
     void resolvePickup(uint8_t pickupId);

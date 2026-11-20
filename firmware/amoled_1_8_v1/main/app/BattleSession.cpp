@@ -683,12 +683,10 @@ void BattleSession::finishBattleVictory(Game::GameState& gameState, uint32_t now
             }
         }
     }
-    bool allowsFriendship = state_.battleSpecialKind == ExploreSpecial::Kind::NONE ||
-        ExploreSpecial::configFor(state_.battleSpecialKind).allowsFriendship;
     Game::FriendshipService::OfferResult offer =
         Game::FriendshipService::evaluateOffer(
             gameState, *wildSpecies, state_.battleWild,
-            state_.battleIsBoss, allowsFriendship, state_.battleFoodBond);
+            state_.battleIsBoss, state_.battleSpecialKind, state_.battleFoodBond);
     if (offer.offered) {
         state_.battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::OFFER;
         state_.battleFriendshipContactSlot = 0xFF;
@@ -703,10 +701,6 @@ void BattleSession::finishBattleVictory(Game::GameState& gameState, uint32_t now
         pushBattleLog(nowMs);
         damageRows(0, 448);
         return;
-    }
-    if (offer.eligible) {
-        Game::FriendshipService::recordFailure(
-            gameState, state_.battleWild.speciesId);
     }
     if (timeline_.logBusy()) {
         state_.battleVictoryFinalizePending = true;
@@ -735,7 +729,7 @@ void BattleSession::resolveBattleFriendship(Game::GameState& gameState, uint8_t 
         }
         if (!Game::FriendshipService::recordContact(
                 gameState, state_.battleWild, area_,
-                gameState.gameMinutesTotal * 60UL, &contactSlot)) {
+                gameState.gameMinutesTotal * 60UL, &contactSlot, state_.battleSpecialKind)) {
             state_.battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::FULL;
             std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                           Ui::Amoled::BOX_FULL);
@@ -744,8 +738,6 @@ void BattleSession::resolveBattleFriendship(Game::GameState& gameState, uint8_t 
             damageRows(56, 448);
             return;
         }
-        Game::FriendshipService::recordSuccess(
-            gameState, state_.battleWild.speciesId);
         state_.battleFriendshipContactSlot = contactSlot;
         if (gameState.teamCount < Game::TEAM_CAP) {
             state_.battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::TEAM;

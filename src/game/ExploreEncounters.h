@@ -12,20 +12,48 @@ namespace ExploreEncounters {
 
 using Rarity = ExplorePool::Rarity;
 
-struct Entry {
-    uint16_t speciesId;
-    uint8_t weight;
-    uint8_t minLevel;
-    uint8_t maxLevel;
-    Rarity rarity;
-};
-
-template <size_t N>
-constexpr uint16_t weightTotal(const Entry (&entries)[N], size_t index = 0) {
-    return index == N
-        ? 0
-        : entries[index].weight + weightTotal(entries, index + 1);
+// The species tier is shared by all regions. Species without a tier use NORMAL.
+constexpr Rarity rarityForSpecies(uint16_t speciesId) {
+    switch (speciesId) {
+    case 10: case 12: case 161: case 194: case 195: case 285:
+    case 361:
+        return Rarity::COMMON;
+    case 17: case 18: case 26: case 41: case 92: case 172:
+    case 184: case 279: case 280: case 282: case 322: case 362:
+        return Rarity::UNCOMMON;
+    case 123: case 130: case 133: case 134: case 135: case 136:
+    case 147: case 148: case 149: case 196: case 197: case 281:
+        return Rarity::RARE;
+    case 25:
+        return Rarity::VERY_RARE;
+    case 1: case 2: case 3: case 4: case 5: case 6:
+    case 7: case 8: case 9:
+        return Rarity::ULTRA_RARE;
+    default: return Rarity::NORMAL;
+    }
 }
+
+constexpr uint8_t baseWeight(Rarity rarity) {
+    switch (rarity) {
+    case Rarity::COMMON: return 12;
+    case Rarity::NORMAL: return 8;
+    case Rarity::UNCOMMON: return 5;
+    case Rarity::RARE: return 3;
+    case Rarity::VERY_RARE: return 2;
+    case Rarity::ULTRA_RARE: return 1;
+    }
+    return 0;
+}
+
+struct Entry {
+    uint16_t speciesId = 0;
+    uint8_t minLevel = 0;
+    uint8_t maxLevel = 0;
+    uint8_t habitat = 0;
+
+    constexpr Rarity rarity() const { return rarityForSpecies(speciesId); }
+    constexpr uint8_t weight() const { return baseWeight(rarity()); }
+};
 
 template <size_t N>
 constexpr bool levelRangesValid(const Entry (&entries)[N], size_t index = 0) {
@@ -36,156 +64,157 @@ constexpr bool levelRangesValid(const Entry (&entries)[N], size_t index = 0) {
             levelRangesValid(entries, index + 1));
 }
 
-template<class V> inline void contentFields(V& v, Entry& x) { v(x.speciesId,x.weight,x.minLevel,x.maxLevel,x.rarity); }
+template<class V> inline void contentFields(V& v, Entry& entry) {
+    // The v1 record retains its original width and offsets. The old rarity
+    // byte uses only three bits. The marker distinguishes an explicitly empty
+    // habitat in a new record from a legacy record written before habitats.
+    constexpr uint8_t HAS_HABITAT = 0x80;
+    uint8_t exportedWeight = entry.weight();
+    uint8_t tierAndHabitat = HAS_HABITAT | uint8_t(entry.rarity()) | (entry.habitat << 3);
+    v(entry.speciesId, exportedWeight, entry.minLevel, entry.maxLevel, tierAndHabitat);
+    if constexpr (std::is_same_v<V, ContentData::Reader>) {
+        const bool hasHabitat = (tierAndHabitat & HAS_HABITAT) != 0;
+        const uint8_t storedHabitat = (tierAndHabitat & ~HAS_HABITAT) >> 3;
+        if (!exportedWeight || (tierAndHabitat & 7U) > uint8_t(Rarity::ULTRA_RARE) ||
+            (storedHabitat & ~ExploreHabitat::KNOWN) || (!hasHabitat && storedHabitat)) {
+            v.good = false;
+        }
+        entry.habitat = storedHabitat;
+        if (!hasHabitat && (entry.speciesId == 129 || entry.speciesId == 130)) {
+            entry.habitat = ExploreHabitat::OPEN_WATER;
+        }
+    }
+}
 #if STICKMON_EXTERNAL_CONTENT
 using GRASS_PATH_ContentItem = Entry;
-inline const ContentData::Table<GRASS_PATH_ContentItem,10> GRASS_PATH{30};
+inline const ContentData::Table<GRASS_PATH_ContentItem,ExplorePool::MAX_SOURCE_ENTRIES,false> GRASS_PATH{30};
 #else
 static constexpr Entry GRASS_PATH[] = {
-    {10, 18, 1, 6, Rarity::COMMON},
-    {161, 19, 1, 9, Rarity::COMMON},
-    {16, 17, 2, 9, Rarity::NORMAL},
-    {261, 13, 2, 9, Rarity::NORMAL},
-    {280, 8, 3, 9, Rarity::UNCOMMON},
-    {172, 6, 3, 9, Rarity::UNCOMMON},
-    {11, 15, 7, 9, Rarity::NORMAL},
-    {133, 2, 3, 9, Rarity::RARE},
-    {1, 1, 3, 9, Rarity::ULTRA_RARE},
-    {4, 1, 3, 9, Rarity::ULTRA_RARE},
+    {10, 1, 6},
+    {161, 1, 9},
+    {16, 2, 9},
+    {261, 2, 9},
+    {280, 3, 9},
+    {172, 3, 9},
+    {11, 7, 9},
+    {133, 3, 9},
+    {1, 3, 9},
+    {4, 3, 9},
 };
 #endif
 
 #if STICKMON_EXTERNAL_CONTENT
 using CREEK_SLOPE_ContentItem = Entry;
-inline const ContentData::Table<CREEK_SLOPE_ContentItem,15> CREEK_SLOPE{31};
+inline const ContentData::Table<CREEK_SLOPE_ContentItem,ExplorePool::MAX_SOURCE_ENTRIES,false> CREEK_SLOPE{31};
 #else
 static constexpr Entry CREEK_SLOPE[] = {
-    {194, 18, 7, 17, Rarity::COMMON},
-    {298, 13, 7, 15, Rarity::NORMAL},
-    {183, 8, 8, 17, Rarity::NORMAL},
-    {278, 14, 7, 17, Rarity::NORMAL},
-    {129, 12, 7, 17, Rarity::NORMAL},
-    {74, 10, 8, 17, Rarity::NORMAL},
-    {322, 6, 8, 17, Rarity::UNCOMMON},
-    {41, 7, 8, 17, Rarity::UNCOMMON},
-    {161, 3, 7, 14, Rarity::COMMON},
-    {261, 2, 7, 17, Rarity::NORMAL},
-    {16, 2, 7, 17, Rarity::NORMAL},
-    {280, 2, 7, 17, Rarity::UNCOMMON},
-    {147, 1, 10, 17, Rarity::RARE},
-    {7, 1, 7, 15, Rarity::ULTRA_RARE},
-    {5, 1, 16, 17, Rarity::ULTRA_RARE},
+    {194, 7, 17},
+    {298, 7, 15},
+    {183, 8, 17},
+    {278, 7, 17},
+    {129, 7, 17, ExploreHabitat::OPEN_WATER},
+    {74, 8, 17},
+    {322, 8, 17},
+    {41, 8, 17},
+    {161, 7, 14},
+    {261, 7, 17},
+    {16, 7, 17},
+    {280, 7, 17},
+    {147, 10, 17},
+    {7, 7, 15},
+    {5, 16, 17},
 };
 #endif
 
 #if STICKMON_EXTERNAL_CONTENT
 using TALL_GRASS_PARK_ContentItem = Entry;
-inline const ContentData::Table<TALL_GRASS_PARK_ContentItem,19> TALL_GRASS_PARK{32};
+inline const ContentData::Table<TALL_GRASS_PARK_ContentItem,ExplorePool::MAX_SOURCE_ENTRIES,false> TALL_GRASS_PARK{32};
 #else
 static constexpr Entry TALL_GRASS_PARK[] = {
-    {12, 20, 17, 27, Rarity::COMMON},
-    {285, 17, 17, 22, Rarity::COMMON},
-    {25, 10, 17, 27, Rarity::VERY_RARE},
-    {162, 8, 17, 27, Rarity::NORMAL},
-    {281, 6, 20, 27, Rarity::RARE},
-    {17, 6, 18, 27, Rarity::UNCOMMON},
-    {184, 4, 18, 27, Rarity::UNCOMMON},
-    {279, 4, 25, 27, Rarity::UNCOMMON},
-    {130, 4, 20, 27, Rarity::RARE},
-    {278, 3, 17, 24, Rarity::NORMAL},
-    {322, 3, 17, 27, Rarity::UNCOMMON},
-    {286, 3, 23, 27, Rarity::NORMAL},
-    {26, 3, 17, 27, Rarity::UNCOMMON},
-    {92, 3, 17, 24, Rarity::UNCOMMON},
-    {133, 2, 17, 27, Rarity::RARE},
-    {123, 1, 17, 27, Rarity::RARE},
-    {2, 1, 17, 27, Rarity::ULTRA_RARE},
-    {147, 1, 17, 27, Rarity::RARE},
-    {8, 1, 17, 27, Rarity::ULTRA_RARE},
+    {12, 17, 27},
+    {285, 17, 22},
+    {25, 17, 27},
+    {162, 17, 27},
+    {281, 20, 27},
+    {17, 18, 27},
+    {184, 18, 27},
+    {279, 25, 27},
+    {130, 20, 27, ExploreHabitat::OPEN_WATER},
+    {278, 17, 24},
+    {322, 17, 27},
+    {286, 23, 27},
+    {26, 17, 27},
+    {92, 17, 24},
+    {133, 17, 27},
+    {123, 17, 27},
+    {2, 17, 27},
+    {147, 17, 27},
+    {8, 17, 27},
 };
 #endif
 
 #if STICKMON_EXTERNAL_CONTENT
 using FROST_CRYSTAL_CAVE_ContentItem = Entry;
-inline const ContentData::Table<FROST_CRYSTAL_CAVE_ContentItem,13> FROST_CRYSTAL_CAVE{33};
+inline const ContentData::Table<FROST_CRYSTAL_CAVE_ContentItem,ExplorePool::MAX_SOURCE_ENTRIES,false> FROST_CRYSTAL_CAVE{33};
 #else
 static constexpr Entry FROST_CRYSTAL_CAVE[] = {
-    {361, 33, 28, 41, Rarity::COMMON},
-    {42, 14, 28, 41, Rarity::NORMAL},
-    {75, 12, 28, 41, Rarity::NORMAL},
-    {93, 7, 28, 41, Rarity::NORMAL},
-    {282, 6, 30, 42, Rarity::UNCOMMON},
-    {92, 5, 28, 41, Rarity::UNCOMMON},
-    {148, 5, 30, 41, Rarity::RARE},
-    {41, 4, 28, 41, Rarity::UNCOMMON},
-    {362, 4, 42, 42, Rarity::UNCOMMON},
-    {18, 3, 36, 41, Rarity::UNCOMMON},
-    {17, 3, 28, 35, Rarity::UNCOMMON},
-    {281, 3, 28, 29, Rarity::RARE},
-    {9, 1, 36, 41, Rarity::ULTRA_RARE},
+    {361, 28, 41},
+    {42, 28, 41},
+    {75, 28, 41},
+    {93, 28, 41},
+    {282, 30, 42},
+    {92, 28, 41},
+    {148, 30, 41},
+    {41, 28, 41},
+    {362, 42, 42},
+    {18, 36, 41},
+    {17, 28, 35},
+    {281, 28, 29},
+    {9, 36, 41},
 };
 #endif
 
 #if STICKMON_EXTERNAL_CONTENT
 using MIST_FOREST_PATH_ContentItem = Entry;
-inline const ContentData::Table<MIST_FOREST_PATH_ContentItem,13> MIST_FOREST_PATH{34};
+inline const ContentData::Table<MIST_FOREST_PATH_ContentItem,ExplorePool::MAX_SOURCE_ENTRIES,false> MIST_FOREST_PATH{34};
 #else
 static constexpr Entry MIST_FOREST_PATH[] = {
-    {42, 27, 41, 53, Rarity::NORMAL},
-    {286, 18, 41, 53, Rarity::NORMAL},
-    {262, 15, 41, 53, Rarity::NORMAL},
-    {282, 9, 41, 53, Rarity::UNCOMMON},
-    {362, 7, 42, 53, Rarity::UNCOMMON},
-    {93, 5, 41, 53, Rarity::NORMAL},
-    {134, 3, 41, 53, Rarity::RARE},
-    {135, 3, 41, 53, Rarity::RARE},
-    {136, 3, 41, 53, Rarity::RARE},
-    {196, 3, 41, 53, Rarity::RARE},
-    {197, 3, 41, 53, Rarity::RARE},
-    {148, 3, 41, 49, Rarity::RARE},
-    {3, 1, 41, 53, Rarity::ULTRA_RARE},
+    {42, 41, 53},
+    {286, 41, 53},
+    {262, 41, 53},
+    {282, 41, 53},
+    {362, 42, 53},
+    {93, 41, 53},
+    {134, 41, 53},
+    {135, 41, 53},
+    {136, 41, 53},
+    {196, 41, 53},
+    {197, 41, 53},
+    {148, 41, 49},
+    {3, 41, 53},
 };
 #endif
 
 #if STICKMON_EXTERNAL_CONTENT
 using ANCIENT_WATERFALL_VALLEY_ContentItem = Entry;
-inline const ContentData::Table<ANCIENT_WATERFALL_VALLEY_ContentItem,14> ANCIENT_WATERFALL_VALLEY{35};
+inline const ContentData::Table<ANCIENT_WATERFALL_VALLEY_ContentItem,ExplorePool::MAX_SOURCE_ENTRIES,false> ANCIENT_WATERFALL_VALLEY{35};
 #else
 static constexpr Entry ANCIENT_WATERFALL_VALLEY[] = {
-    {42, 19, 53, 67, Rarity::NORMAL},
-    {323, 9, 53, 67, Rarity::NORMAL},
-    {195, 16, 53, 67, Rarity::COMMON},
-    {130, 10, 53, 67, Rarity::RARE},
-    {75, 8, 53, 67, Rarity::NORMAL},
-    {279, 10, 53, 67, Rarity::UNCOMMON},
-    {184, 10, 53, 67, Rarity::UNCOMMON},
-    {362, 6, 53, 67, Rarity::UNCOMMON},
-    {149, 3, 53, 67, Rarity::RARE},
-    {262, 3, 53, 67, Rarity::NORMAL},
-    {93, 3, 53, 67, Rarity::NORMAL},
-    {6, 1, 53, 67, Rarity::ULTRA_RARE},
-    {9, 1, 53, 67, Rarity::ULTRA_RARE},
-    {3, 1, 53, 67, Rarity::ULTRA_RARE},
+    {42, 53, 67},
+    {323, 53, 67},
+    {195, 53, 67},
+    {130, 53, 67, ExploreHabitat::OPEN_WATER},
+    {75, 53, 67},
+    {279, 53, 67},
+    {184, 53, 67},
+    {362, 53, 67},
+    {149, 53, 67},
+    {262, 53, 67},
+    {93, 53, 67},
+    {6, 53, 67},
+    {9, 53, 67},
+    {3, 53, 67},
 };
-#endif
-
-#if !STICKMON_EXTERNAL_CONTENT
-static_assert(weightTotal(GRASS_PATH) == 100, "grass path weights");
-#endif
-#if !STICKMON_EXTERNAL_CONTENT
-static_assert(weightTotal(CREEK_SLOPE) == 100, "creek slope weights");
-#endif
-#if !STICKMON_EXTERNAL_CONTENT
-static_assert(weightTotal(TALL_GRASS_PARK) == 100, "tall grass weights");
-#endif
-#if !STICKMON_EXTERNAL_CONTENT
-static_assert(weightTotal(FROST_CRYSTAL_CAVE) == 100, "frost cave weights");
-#endif
-#if !STICKMON_EXTERNAL_CONTENT
-static_assert(weightTotal(MIST_FOREST_PATH) == 100, "mist forest weights");
-#endif
-#if !STICKMON_EXTERNAL_CONTENT
-static_assert(weightTotal(ANCIENT_WATERFALL_VALLEY) == 100, "ancient valley weights");
 #endif
 
 #if !STICKMON_EXTERNAL_CONTENT
@@ -208,7 +237,7 @@ constexpr Table table(const Entry (&entries)[N]) {
     return {entries, static_cast<uint8_t>(N)};
 }
 
-template<size_t N> inline Table table(const ContentData::Table<Entry,N>& entries) {
+template<size_t N,bool Exact> inline Table table(const ContentData::Table<Entry,N,Exact>& entries) {
     return {entries.data(), static_cast<uint8_t>(entries.size())};
 }
 
@@ -224,6 +253,50 @@ inline Table tableForArea(uint8_t area) {
     }
 }
 
+struct BattleCandidates {
+    struct Candidate {
+        const Entry* entry;
+        uint8_t weight;
+    };
+    Candidate entries[ExplorePool::MAX_SOURCE_ENTRIES]{};
+    uint8_t count = 0;
+    uint16_t total = 0;
+
+    const Entry* at(uint16_t roll) const {
+        for (uint8_t i = 0; i < count; ++i) {
+            if (roll < entries[i].weight) return entries[i].entry;
+            roll -= entries[i].weight;
+        }
+        return nullptr;
+    }
+};
+
+inline BattleCandidates battleCandidates(Table table, const ExplorePool::Pool& pool,
+                                          uint8_t mapHabitat) {
+    BattleCandidates candidates;
+    if (!table.entries) return candidates;
+    const auto add = [&](const Entry& entry, uint8_t weight) {
+        if (!ExploreHabitat::matches(entry.habitat, mapHabitat) ||
+            candidates.count == ExplorePool::MAX_SOURCE_ENTRIES) return;
+        candidates.entries[candidates.count++] = {&entry, weight};
+        candidates.total += weight;
+    };
+    if (pool.count == 0) {
+        for (uint8_t i = 0; i < table.count; ++i) add(table.entries[i], table.entries[i].weight());
+    } else {
+        for (uint8_t i = 0; i < pool.count && i < ExplorePool::POOL_CAP; ++i) {
+            const auto& member = pool.entries[i];
+            for (uint8_t j = 0; j < table.count; ++j) {
+                const auto& entry = table.entries[j];
+                if (entry.speciesId != member.speciesId) continue;
+                add(entry, ExplorePool::rollWeightOf(member));
+                break;
+            }
+        }
+    }
+    return candidates;
+}
+
 inline ExplorePool::Pool poolForArea(uint8_t area, uint32_t gameMinutesTotal,
                                      uint8_t rerollCount) {
     const Table encounterTable = tableForArea(area);
@@ -233,7 +306,7 @@ inline ExplorePool::Pool poolForArea(uint8_t area, uint32_t gameMinutesTotal,
         ? encounterTable.count : ExplorePool::MAX_SOURCE_ENTRIES;
     for (uint8_t index = 0; index < count; ++index) {
         const Entry& entry = encounterTable.entries[index];
-        source[index] = {entry.speciesId, entry.weight, entry.rarity};
+        source[index] = {entry.speciesId, entry.weight(), entry.rarity(), entry.habitat};
     }
     return ExplorePool::buildPool(
         source, count,

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class FriendshipPityTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
-    def test_species_tiers_and_probability_curve(self):
+    def test_legendary_eligibility_lru_and_probability_curve(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Path(temp_dir) / "friendship_pity_host"
             subprocess.run(

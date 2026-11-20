@@ -638,6 +638,35 @@ static constexpr const char* SNORLAX = "卡比兽";
 static constexpr const char* DRATINI = "迷你龙";
 static constexpr const char* DRAGONAIR = "哈克龙";
 static constexpr const char* DRAGONITE = "快龙";
+static constexpr const char* JYNX = "迷唇姐";
+static constexpr const char* HERACROSS = "赫拉克罗斯";
+static constexpr const char* SNEASEL = "狃拉";
+static constexpr const char* SWINUB = "小山猪";
+static constexpr const char* PILOSWINE = "长毛猪";
+static constexpr const char* DELIBIRD = "信使鸟";
+static constexpr const char* SMOOCHUM = "迷唇娃";
+static constexpr const char* ZIGZAGOON = "蛇纹熊";
+static constexpr const char* LINOONE = "直冲熊";
+static constexpr const char* WURMPLE = "刺尾虫";
+static constexpr const char* SILCOON = "甲壳茧";
+static constexpr const char* BEAUTIFLY = "狩猎凤蝶";
+static constexpr const char* CASCOON = "盾甲茧";
+static constexpr const char* DUSTOX = "毒粉蛾";
+static constexpr const char* LOTAD = "莲叶童子";
+static constexpr const char* LOMBRE = "莲帽小童";
+static constexpr const char* LUDICOLO = "乐天河童";
+static constexpr const char* SEEDOT = "橡实果";
+static constexpr const char* NUZLEAF = "长鼻叶";
+static constexpr const char* SHIFTRY = "狡猾天狗";
+static constexpr const char* NOSEPASS = "朝北鼻";
+static constexpr const char* SABLEYE = "勾魂眼";
+static constexpr const char* BARBOACH = "泥泥鳅";
+static constexpr const char* WHISCASH = "鲶鱼王";
+static constexpr const char* CORPHISH = "龙虾小兵";
+static constexpr const char* CRAWDAUNT = "铁螯龙虾";
+static constexpr const char* DUSKULL = "夜巡灵";
+static constexpr const char* DUSCLOPS = "彷徨夜灵";
+static constexpr const char* ABSOL = "阿勃梭鲁";
 }
 
 namespace Type {

@@ -81,6 +81,7 @@ struct Map {
     bool hasWaterfall = false;
     bool valleyJourney = false;
     uint8_t valleyNode = 0;
+    uint8_t habitat = 0;
 };
 
 inline bool finalPath(const Map& map, uint8_t path, uint8_t block, uint8_t count) {

@@ -1,6 +1,7 @@
 #include "game/ExploreEcology.h"
 #include "game/ExploreEncounters.h"
 #include "game/ExploreRouteGeometry.h"
+#include "game/ExploreTileSemantics.h"
 
 #include <algorithm>
 #include <cassert>
@@ -1083,7 +1084,55 @@ static void checkCaveBatGroups() {
         groups, movedTicks);
 }
 
+static void checkEncounterHabitat() {
+    using namespace ExploreMapGenerator;
+    const auto valley = ExploreEncounters::tableForArea(ANCIENT_WATERFALL_VALLEY_AREA);
+    const ExplorePool::Pool fish{{{130, 3, ExplorePool::Rarity::RARE, ExploreHabitat::OPEN_WATER}}, 1};
+    Map map{};
+    assert(generateValleyRegion(1, {0, 0}, false, map));
+    assert(map.habitat == 0);
+    assert(!ExploreEncounters::battleCandidates(valley, fish, map.habitat).total);
+    assert(generateValleyRegion(1, {7, 0}, false, map));
+    assert(map.habitat == (ExploreHabitat::CAVE | ExploreHabitat::OPEN_WATER));
+    assert(ExploreEncounters::battleCandidates(valley, fish, map.habitat).total == 9);
+    assert(generateValleyRegion(1, {6, 0}, false, map));
+    assert(map.habitat == (ExploreHabitat::CAVE | ExploreHabitat::OPEN_WATER));
+    assert(ExploreEncounters::battleCandidates(valley, fish, map.habitat).total == 9);
+
+    Map dryCave{};
+    dryCave.areaIndex = FROST_CRYSTAL_CAVE_AREA;
+    std::fill_n(dryCave.layers[0], CELL_COUNT, 4744);
+    assert(ExploreTileSemantics::encounterHabitat(dryCave) == ExploreHabitat::CAVE);
+    assert(!ExploreEncounters::battleCandidates(valley, fish, ExploreHabitat::CAVE).total);
+
+    // Only the far corner contains water, well away from all route points.
+    map = {};
+    map.areaIndex = CREEK_BRIDGE_SLOPE_AREA;
+    map.pathCount = 1;
+    map.paths[0].pointCount = 3;
+    map.paths[0].points[0] = {1, 5};
+    map.paths[0].points[1] = {2, 5};
+    map.paths[0].points[2] = {3, 5};
+    std::fill_n(map.layers[0], CELL_COUNT, 385);
+    map.layers[2][CELL_COUNT - 1] = 1627;
+    assert(ExploreTileSemantics::encounterHabitat(map) == 0);
+    map.layers[0][CELL_COUNT - 1] = 1097;
+    map.layers[2][CELL_COUNT - 1] = 1532;
+    assert(ExploreTileSemantics::encounterHabitat(map) == 0);
+    map.layers[2][CELL_COUNT - 1] = 0;
+    assert(ExploreTileSemantics::encounterHabitat(map) == ExploreHabitat::OPEN_WATER);
+
+    // Preserve the surviving actor's hidden bit when a pool member is removed.
+    const ExplorePool::Pool active{{{129, 8, ExplorePool::Rarity::NORMAL, ExploreHabitat::OPEN_WATER},
+                                    {74, 8, ExplorePool::Rarity::NORMAL}}, 2};
+    Simulation simulation;
+    simulation.reset(map, 0, active, 1U << 1, 0);
+    assert(simulation.count() == 1 && simulation.pose(0).speciesId == 74 &&
+           simulation.pose(0).hidden);
+}
+
 int main() {
+    checkEncounterHabitat();
     checkCaveBatGroups();
     checkSingleMemberGroups();
     checkMarillCompositions();

@@ -10,15 +10,16 @@
 namespace Game {
 namespace FriendshipService {
 
-OfferResult evaluateOffer(const GameState& state,
+OfferResult evaluateOffer(GameState& state,
                           const Species& species,
                           const MonsterRuntime& monster,
                           bool boss,
-                          bool allowsFriendship,
+                          ExploreSpecial::Kind special,
                           uint8_t foodBond,
                           bool forceOffer) {
     OfferResult result;
-    result.eligible = allowsFriendship &&
+    const auto config = ExploreSpecial::configFor(special);
+    result.eligible = (special == ExploreSpecial::Kind::NONE || config.allowsFriendship) &&
                       state.storageCount < STORAGE_CAP;
     if (!result.eligible) return result;
     if (forceOffer) {
@@ -26,16 +27,11 @@ OfferResult evaluateOffer(const GameState& state,
         return result;
     }
 
-    int8_t pityIndex = FriendshipPity::indexFor(species.id);
-    uint8_t failCount = pityIndex >= 0
-        ? state.friendshipPityFailCounts[pityIndex] : 0;
-    FriendshipPity::Tier tier = pityIndex >= 0
-        ? FriendshipPity::tierAt(static_cast<uint8_t>(pityIndex))
-        : FriendshipPity::Tier::NONE;
+    const bool usesPity = boss && ExploreSpecial::usesFriendshipPity(config, species.id);
+    const uint8_t failures = usesPity ? FriendshipPity::failuresFor(state.friendshipPity, species.id) : 0;
     uint16_t baseChance = FriendshipSystem::offerChancePermille(
         species, monster, boss, foodBond);
-    uint16_t finalChance = FriendshipPity::chanceWithBonus(
-        baseChance, tier, failCount);
+    uint16_t finalChance = FriendshipPity::chanceWithBonus(baseChance, failures);
 
     uint16_t shakeRolls[FriendshipSystem::SHAKE_CHECK_COUNT];
     for (uint8_t index = 0;
@@ -52,24 +48,14 @@ OfferResult evaluateOffer(const GameState& state,
     bool pityPassed = !basePassed && conditionalBonus > 0 &&
         static_cast<uint16_t>(GameRandom::random(0, 1000)) < conditionalBonus;
     result.offered = basePassed || pityPassed;
+    if (usesPity && !result.offered)
+        result.pityChanged = FriendshipPity::recordFailure(state.friendshipPity, species.id);
     return result;
 }
 
-void recordFailure(GameState& state, uint16_t speciesId) {
-    if (state.storageCount >= STORAGE_CAP) return;
-    int8_t index = FriendshipPity::indexFor(speciesId);
-    if (index < 0) return;
-    uint8_t& failCount = state.friendshipPityFailCounts[index];
-    if (failCount < FriendshipPity::MAX_FAIL_COUNT) ++failCount;
-}
-
-void recordSuccess(GameState& state, uint16_t speciesId) {
-    int8_t index = FriendshipPity::indexFor(speciesId);
-    if (index >= 0) state.friendshipPityFailCounts[index] = 0;
-}
-
 bool recordContact(GameState& state, const MonsterRuntime& monster,
-                   uint8_t metArea, uint32_t metAt, uint8_t* contactSlot) {
+                   uint8_t metArea, uint32_t metAt, uint8_t* contactSlot,
+                   ExploreSpecial::Kind special) {
     const Species* species = findSpecies(monster.speciesId);
     if (!species || state.storageCount >= STORAGE_CAP) return false;
 
@@ -87,6 +73,8 @@ bool recordContact(GameState& state, const MonsterRuntime& monster,
 
     uint8_t slot = state.storageCount++;
     state.storage[slot] = contact;
+    if (ExploreSpecial::usesFriendshipPity(ExploreSpecial::configFor(special), species->id))
+        FriendshipPity::clear(state.friendshipPity, species->id);
     if (contactSlot) *contactSlot = slot;
     return true;
 }

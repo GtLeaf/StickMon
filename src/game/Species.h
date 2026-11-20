@@ -57,6 +57,14 @@ enum class EvolutionMethod : uint8_t {
     BRANCH,
 };
 
+enum class EvolutionStone : uint8_t {
+    NONE,
+    FIRE,
+    WATER,
+    THUNDER,
+    LEAF,
+};
+
 struct Species {
     uint16_t id;
     const char* name;
@@ -70,6 +78,7 @@ struct Species {
     uint8_t evolveLevel;
     uint16_t baseExp;
     uint8_t catchRate;
+    bool assetsPending = false;
 };
 
 enum class DamageClass : uint8_t {
@@ -216,7 +225,17 @@ struct SpeciesTutorMoves { uint16_t speciesId; uint16_t offset; uint8_t count; }
 template<class V> inline void contentFields(V& v, SpeciesTutorMoves& x) { v(x.speciesId,x.offset,x.count); }
 
 template<class V> inline void contentFields(V& v, BaseStats& x) { v(x.hp,x.atk,x.def,x.spa,x.spd,x.spe); }
-template<class V> inline void contentFields(V& v, Species& x) { v(x.id,x.name,x.type1,x.type2,x.stats,x.growthRate,x.evYieldPacked,x.evolveTo,x.evolveMethod,x.evolveLevel,x.baseExp,x.catchRate); }
+template<class V> inline void contentFields(V& v, Species& x) {
+    // Pending species share the existing record layout with playable species.
+    constexpr uint8_t ASSETS_PENDING = 0x80;
+    uint8_t evolution = uint8_t(x.evolveMethod) | (x.assetsPending ? ASSETS_PENDING : 0);
+    v(x.id,x.name,x.type1,x.type2,x.stats,x.growthRate,x.evYieldPacked,x.evolveTo,
+      evolution,x.evolveLevel,x.baseExp,x.catchRate);
+    if constexpr (std::is_same_v<V, ContentData::Reader>) {
+        x.assetsPending = (evolution & ASSETS_PENDING) != 0;
+        x.evolveMethod = static_cast<EvolutionMethod>(evolution & ~ASSETS_PENDING);
+    }
+}
 template<class V> inline void contentFields(V& v, MoveInfo& x) { v(x.id,x.name,x.description,x.power,x.type,x.damageClass,x.accuracy,x.pp,x.priority,x.battleSupported,x.effectOffset,x.effectCount,x.minHits,x.maxHits,x.criticalStage,x.flags); }
 template<class V> inline void contentFields(V& v, MoveEffectSpec& x) { v(x.kind,x.target,x.chance,x.value,x.aux,x.minTurns,x.maxTurns); }
 template<class V> inline void contentFields(V& v, LearnsetEntry& x) { v(x.level,x.moveId); }
@@ -232,7 +251,9 @@ const char* abilityName(AbilityId ability);
 const Species* levelUpEvolutionTarget(const Species& species,
                                       const Game::MonsterRuntime& monster,
                                       uint32_t gameMinutesTotal);
+bool isDirectEvolutionTarget(const Species& source, const Species& target);
 // 进化石触发的目标；石头无效或不匹配时返回 nullptr。
+const Species* stoneEvolutionTarget(const Species& species, EvolutionStone stone);
 const Species* stoneEvolutionTarget(const Species& species, Game::ItemId stone);
 const MoveInfo* findMove(Game::MoveId moveId);
 const MoveEffectSpec* moveEffectFor(const MoveInfo& move, uint8_t index);

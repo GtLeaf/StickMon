@@ -1,4 +1,5 @@
 #include "core/SaveCodec.h"
+#include "game/FriendshipPity.h"
 
 #include <cstring>
 
@@ -260,7 +261,10 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u8(state.settings.language);
 
     for (uint8_t value : state.explorePoolRerollCounts) writer.u8(value);
-    for (uint8_t value : state.friendshipPityFailCounts) writer.u8(value);
+    for (const auto& entry : state.friendshipPity.entries) {
+        writer.u16(entry.speciesId);
+        writer.u8(entry.failures);
+    }
     writer.u8(state.specialBossDefeatedMask);
     for (uint8_t value : state.roamingRerollCounts) writer.u8(value);
     writer.u8(state.tutorialFlags);
@@ -392,7 +396,16 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
     state.settings.language = reader.u8();
 
     for (uint8_t& value : state.explorePoolRerollCounts) value = reader.u8();
-    for (uint8_t& value : state.friendshipPityFailCounts) value = reader.u8();
+    if (schema >= 10) {
+        for (auto& entry : state.friendshipPity.entries) {
+            entry.speciesId = reader.u16();
+            entry.failures = reader.u8();
+        }
+    } else {
+        uint8_t legacy[Game::LEGACY_FRIENDSHIP_PITY_COUNT]{};
+        for (uint8_t& value : legacy) value = reader.u8();
+        state.friendshipPity = FriendshipPity::migrateLegacy(legacy);
+    }
     state.specialBossDefeatedMask = reader.u8();
     for (uint8_t& value : state.roamingRerollCounts) value = reader.u8();
     state.tutorialFlags = reader.u8();
@@ -598,10 +611,7 @@ bool decode(const uint8_t* input,
     Reader reader(input + HEADER_BYTES, payloadLength);
     readState(reader, schema, snapshot.state);
     readView(reader, snapshot.view);
-    const uint16_t expectedStateVersion =
-        schema == 1 ? SCHEMA_1_STATE_VERSION : schema == 2 ? 4 :
-        schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 :
-        schema <= 7 ? 8 : schema == 8 ? 9 : Game::SAVE_VERSION;
+    const uint16_t expectedStateVersion = stateVersionForSchema(schema);
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
         snapshot.state.version != expectedStateVersion ||

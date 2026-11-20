@@ -7,7 +7,11 @@
     "versionGroup": "omega-ruby-alpha-sapphire",
     "versionGroupId": 16,
     "moveLearnMethod": "level-up",
-    "fetchedAt": "2026-07-16T08:54:30+00:00"
+    "fetchedAt": "2026-07-16T08:54:30+00:00",
+    "pendingSpecies": {
+      "revision": "193d8d4fbb57cf962e3f7c1ce5299a6fe847b3f8",
+      "scope": "ORAS level-up moves already known to StickMon plus Present metadata for Delibird"
+    }
   },
   "species": [
     {
@@ -2169,6 +2173,59 @@
       ]
     },
     {
+      "id": 124,
+      "identifier": "jynx",
+      "evolvesFromId": 238,
+      "basicMoveId": 1,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 577
+        },
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 1
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 122
+        },
+        {
+          "level": 1,
+          "order": 6,
+          "moveId": 181
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 122
+        },
+        {
+          "level": 11,
+          "order": null,
+          "moveId": 181
+        },
+        {
+          "level": 25,
+          "order": null,
+          "moveId": 212
+        },
+        {
+          "level": 44,
+          "order": null,
+          "moveId": 34
+        },
+        {
+          "level": 60,
+          "order": null,
+          "moveId": 59
+        }
+      ]
+    },
+    {
       "id": 129,
       "identifier": "magikarp",
       "evolvesFromId": 0,
@@ -3940,6 +3997,349 @@
       ]
     },
     {
+      "id": 214,
+      "identifier": "heracross",
+      "evolvesFromId": 0,
+      "basicMoveId": 33,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 400
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 33
+        },
+        {
+          "level": 1,
+          "order": 5,
+          "moveId": 43
+        },
+        {
+          "level": 7,
+          "order": null,
+          "moveId": 364
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 332
+        },
+        {
+          "level": 16,
+          "order": null,
+          "moveId": 498
+        },
+        {
+          "level": 19,
+          "order": null,
+          "moveId": 68
+        },
+        {
+          "level": 31,
+          "order": null,
+          "moveId": 42
+        },
+        {
+          "level": 34,
+          "order": null,
+          "moveId": 36
+        }
+      ]
+    },
+    {
+      "id": 215,
+      "identifier": "sneasel",
+      "evolvesFromId": 0,
+      "basicMoveId": 10,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 10
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 43
+        },
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 269
+        },
+        {
+          "level": 8,
+          "order": null,
+          "moveId": 98
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 185
+        },
+        {
+          "level": 14,
+          "order": null,
+          "moveId": 196
+        },
+        {
+          "level": 16,
+          "order": null,
+          "moveId": 154
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 97
+        },
+        {
+          "level": 22,
+          "order": null,
+          "moveId": 232
+        },
+        {
+          "level": 32,
+          "order": null,
+          "moveId": 103
+        },
+        {
+          "level": 35,
+          "order": null,
+          "moveId": 163
+        },
+        {
+          "level": 47,
+          "order": null,
+          "moveId": 420
+        }
+      ]
+    },
+    {
+      "id": 220,
+      "identifier": "swinub",
+      "evolvesFromId": 0,
+      "basicMoveId": 33,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 33
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 316
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 300
+        },
+        {
+          "level": 8,
+          "order": null,
+          "moveId": 181
+        },
+        {
+          "level": 18,
+          "order": null,
+          "moveId": 426
+        },
+        {
+          "level": 21,
+          "order": null,
+          "moveId": 196
+        },
+        {
+          "level": 24,
+          "order": null,
+          "moveId": 420
+        },
+        {
+          "level": 28,
+          "order": null,
+          "moveId": 36
+        },
+        {
+          "level": 35,
+          "order": null,
+          "moveId": 54
+        },
+        {
+          "level": 37,
+          "order": null,
+          "moveId": 89
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 175
+        },
+        {
+          "level": 44,
+          "order": null,
+          "moveId": 59
+        },
+        {
+          "level": 48,
+          "order": null,
+          "moveId": 133
+        }
+      ]
+    },
+    {
+      "id": 221,
+      "identifier": "piloswine",
+      "evolvesFromId": 220,
+      "basicMoveId": 181,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 246
+        },
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 316
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 300
+        },
+        {
+          "level": 1,
+          "order": 5,
+          "moveId": 181
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 300
+        },
+        {
+          "level": 8,
+          "order": null,
+          "moveId": 181
+        },
+        {
+          "level": 18,
+          "order": null,
+          "moveId": 426
+        },
+        {
+          "level": 21,
+          "order": null,
+          "moveId": 196
+        },
+        {
+          "level": 24,
+          "order": null,
+          "moveId": 423
+        },
+        {
+          "level": 28,
+          "order": null,
+          "moveId": 36
+        },
+        {
+          "level": 37,
+          "order": null,
+          "moveId": 54
+        },
+        {
+          "level": 41,
+          "order": null,
+          "moveId": 37
+        },
+        {
+          "level": 46,
+          "order": null,
+          "moveId": 89
+        },
+        {
+          "level": 52,
+          "order": null,
+          "moveId": 59
+        },
+        {
+          "level": 58,
+          "order": null,
+          "moveId": 133
+        }
+      ]
+    },
+    {
+      "id": 225,
+      "identifier": "delibird",
+      "evolvesFromId": 0,
+      "basicMoveId": 217,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 217
+        }
+      ]
+    },
+    {
+      "id": 238,
+      "identifier": "smoochum",
+      "evolvesFromId": 0,
+      "basicMoveId": 1,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 1
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 122
+        },
+        {
+          "level": 8,
+          "order": null,
+          "moveId": 186
+        },
+        {
+          "level": 11,
+          "order": null,
+          "moveId": 181
+        },
+        {
+          "level": 15,
+          "order": null,
+          "moveId": 93
+        },
+        {
+          "level": 25,
+          "order": null,
+          "moveId": 212
+        },
+        {
+          "level": 31,
+          "order": null,
+          "moveId": 381
+        },
+        {
+          "level": 38,
+          "order": null,
+          "moveId": 94
+        },
+        {
+          "level": 48,
+          "order": null,
+          "moveId": 59
+        }
+      ]
+    },
+    {
       "id": 261,
       "identifier": "poochyena",
       "evolvesFromId": 0,
@@ -4122,6 +4522,600 @@
           "level": 48,
           "order": null,
           "moveId": 389
+        }
+      ]
+    },
+    {
+      "id": 263,
+      "identifier": "zigzagoon",
+      "evolvesFromId": 0,
+      "basicMoveId": 33,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 33
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 45
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 39
+        },
+        {
+          "level": 7,
+          "order": null,
+          "moveId": 28
+        },
+        {
+          "level": 11,
+          "order": null,
+          "moveId": 29
+        },
+        {
+          "level": 12,
+          "order": null,
+          "moveId": 608
+        },
+        {
+          "level": 13,
+          "order": null,
+          "moveId": 316
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 300
+        },
+        {
+          "level": 19,
+          "order": null,
+          "moveId": 42
+        },
+        {
+          "level": 29,
+          "order": null,
+          "moveId": 175
+        },
+        {
+          "level": 31,
+          "order": null,
+          "moveId": 36
+        },
+        {
+          "level": 35,
+          "order": null,
+          "moveId": 156
+        },
+        {
+          "level": 37,
+          "order": null,
+          "moveId": 187
+        }
+      ]
+    },
+    {
+      "id": 264,
+      "identifier": "linoone",
+      "evolvesFromId": 263,
+      "basicMoveId": 33,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 583
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 33
+        },
+        {
+          "level": 1,
+          "order": 5,
+          "moveId": 45
+        },
+        {
+          "level": 1,
+          "order": 6,
+          "moveId": 39
+        },
+        {
+          "level": 1,
+          "order": 7,
+          "moveId": 28
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 39
+        },
+        {
+          "level": 7,
+          "order": null,
+          "moveId": 28
+        },
+        {
+          "level": 11,
+          "order": null,
+          "moveId": 29
+        },
+        {
+          "level": 13,
+          "order": null,
+          "moveId": 316
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 300
+        },
+        {
+          "level": 19,
+          "order": null,
+          "moveId": 154
+        },
+        {
+          "level": 32,
+          "order": null,
+          "moveId": 163
+        },
+        {
+          "level": 35,
+          "order": null,
+          "moveId": 38
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 156
+        },
+        {
+          "level": 43,
+          "order": null,
+          "moveId": 187
+        }
+      ]
+    },
+    {
+      "id": 265,
+      "identifier": "wurmple",
+      "evolvesFromId": 0,
+      "basicMoveId": 33,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 33
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 81
+        }
+      ]
+    },
+    {
+      "id": 266,
+      "identifier": "silcoon",
+      "evolvesFromId": 265,
+      "basicMoveId": 106,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 106
+        },
+        {
+          "level": 7,
+          "order": null,
+          "moveId": 106
+        }
+      ]
+    },
+    {
+      "id": 267,
+      "identifier": "beautifly",
+      "evolvesFromId": 266,
+      "basicMoveId": 16,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 16
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 16
+        },
+        {
+          "level": 12,
+          "order": null,
+          "moveId": 71
+        },
+        {
+          "level": 15,
+          "order": null,
+          "moveId": 78
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 234
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 314
+        },
+        {
+          "level": 22,
+          "order": null,
+          "moveId": 72
+        },
+        {
+          "level": 25,
+          "order": null,
+          "moveId": 318
+        },
+        {
+          "level": 30,
+          "order": null,
+          "moveId": 18
+        },
+        {
+          "level": 32,
+          "order": null,
+          "moveId": 202
+        },
+        {
+          "level": 35,
+          "order": null,
+          "moveId": 405
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 483
+        }
+      ]
+    },
+    {
+      "id": 268,
+      "identifier": "cascoon",
+      "evolvesFromId": 265,
+      "basicMoveId": 106,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 106
+        },
+        {
+          "level": 7,
+          "order": null,
+          "moveId": 106
+        }
+      ]
+    },
+    {
+      "id": 269,
+      "identifier": "dustox",
+      "evolvesFromId": 268,
+      "basicMoveId": 16,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 16
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 16
+        },
+        {
+          "level": 12,
+          "order": null,
+          "moveId": 93
+        },
+        {
+          "level": 15,
+          "order": null,
+          "moveId": 77
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 236
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 474
+        },
+        {
+          "level": 22,
+          "order": null,
+          "moveId": 60
+        },
+        {
+          "level": 25,
+          "order": null,
+          "moveId": 318
+        },
+        {
+          "level": 27,
+          "order": null,
+          "moveId": 113
+        },
+        {
+          "level": 30,
+          "order": null,
+          "moveId": 18
+        },
+        {
+          "level": 32,
+          "order": null,
+          "moveId": 92
+        },
+        {
+          "level": 35,
+          "order": null,
+          "moveId": 405
+        },
+        {
+          "level": 37,
+          "order": null,
+          "moveId": 182
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 483
+        }
+      ]
+    },
+    {
+      "id": 270,
+      "identifier": "lotad",
+      "evolvesFromId": 0,
+      "basicMoveId": 310,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 310
+        },
+        {
+          "level": 3,
+          "order": null,
+          "moveId": 45
+        },
+        {
+          "level": 6,
+          "order": null,
+          "moveId": 71
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 145
+        },
+        {
+          "level": 15,
+          "order": null,
+          "moveId": 54
+        },
+        {
+          "level": 18,
+          "order": null,
+          "moveId": 72
+        },
+        {
+          "level": 21,
+          "order": null,
+          "moveId": 61
+        },
+        {
+          "level": 27,
+          "order": null,
+          "moveId": 240
+        },
+        {
+          "level": 30,
+          "order": null,
+          "moveId": 202
+        },
+        {
+          "level": 33,
+          "order": null,
+          "moveId": 428
+        }
+      ]
+    },
+    {
+      "id": 271,
+      "identifier": "lombre",
+      "evolvesFromId": 270,
+      "basicMoveId": 310,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 310
+        },
+        {
+          "level": 3,
+          "order": null,
+          "moveId": 45
+        },
+        {
+          "level": 6,
+          "order": null,
+          "moveId": 71
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 145
+        },
+        {
+          "level": 12,
+          "order": null,
+          "moveId": 154
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 346
+        },
+        {
+          "level": 24,
+          "order": null,
+          "moveId": 61
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 428
+        },
+        {
+          "level": 44,
+          "order": null,
+          "moveId": 56
+        }
+      ]
+    },
+    {
+      "id": 272,
+      "identifier": "ludicolo",
+      "evolvesFromId": 271,
+      "basicMoveId": 310,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 310
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 45
+        },
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 72
+        }
+      ]
+    },
+    {
+      "id": 273,
+      "identifier": "seedot",
+      "evolvesFromId": 0,
+      "basicMoveId": 153,
+      "learnset": [
+        {
+          "level": 3,
+          "order": null,
+          "moveId": 106
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 74
+        },
+        {
+          "level": 21,
+          "order": null,
+          "moveId": 235
+        },
+        {
+          "level": 33,
+          "order": null,
+          "moveId": 153
+        }
+      ]
+    },
+    {
+      "id": 274,
+      "identifier": "nuzleaf",
+      "evolvesFromId": 273,
+      "basicMoveId": 1,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 1
+        },
+        {
+          "level": 3,
+          "order": null,
+          "moveId": 106
+        },
+        {
+          "level": 6,
+          "order": null,
+          "moveId": 74
+        },
+        {
+          "level": 14,
+          "order": null,
+          "moveId": 75
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 13
+        },
+        {
+          "level": 24,
+          "order": null,
+          "moveId": 185
+        },
+        {
+          "level": 32,
+          "order": null,
+          "moveId": 207
+        }
+      ]
+    },
+    {
+      "id": 275,
+      "identifier": "shiftry",
+      "evolvesFromId": 274,
+      "basicMoveId": 75,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 75
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 185
+        },
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 18
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 417
+        },
+        {
+          "level": 32,
+          "order": null,
+          "moveId": 542
         }
       ]
     },
@@ -4880,6 +5874,142 @@
       ]
     },
     {
+      "id": 299,
+      "identifier": "nosepass",
+      "evolvesFromId": 0,
+      "basicMoveId": 33,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 33
+        },
+        {
+          "level": 4,
+          "order": null,
+          "moveId": 106
+        },
+        {
+          "level": 7,
+          "order": null,
+          "moveId": 335
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 88
+        },
+        {
+          "level": 13,
+          "order": null,
+          "moveId": 86
+        },
+        {
+          "level": 16,
+          "order": null,
+          "moveId": 156
+        },
+        {
+          "level": 19,
+          "order": null,
+          "moveId": 209
+        },
+        {
+          "level": 22,
+          "order": null,
+          "moveId": 157
+        },
+        {
+          "level": 28,
+          "order": null,
+          "moveId": 350
+        },
+        {
+          "level": 31,
+          "order": null,
+          "moveId": 435
+        },
+        {
+          "level": 37,
+          "order": null,
+          "moveId": 414
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 444
+        }
+      ]
+    },
+    {
+      "id": 302,
+      "identifier": "sableye",
+      "evolvesFromId": 0,
+      "basicMoveId": 10,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 43
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 10
+        },
+        {
+          "level": 4,
+          "order": null,
+          "moveId": 193
+        },
+        {
+          "level": 6,
+          "order": null,
+          "moveId": 101
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 310
+        },
+        {
+          "level": 11,
+          "order": null,
+          "moveId": 154
+        },
+        {
+          "level": 19,
+          "order": null,
+          "moveId": 185
+        },
+        {
+          "level": 29,
+          "order": null,
+          "moveId": 421
+        },
+        {
+          "level": 31,
+          "order": null,
+          "moveId": 109
+        },
+        {
+          "level": 34,
+          "order": null,
+          "moveId": 428
+        },
+        {
+          "level": 39,
+          "order": null,
+          "moveId": 247
+        },
+        {
+          "level": 46,
+          "order": null,
+          "moveId": 212
+        }
+      ]
+    },
+    {
       "id": 322,
       "identifier": "numel",
       "evolvesFromId": 0,
@@ -5067,6 +6197,572 @@
           "level": 59,
           "order": null,
           "moveId": 90
+        }
+      ]
+    },
+    {
+      "id": 339,
+      "identifier": "barboach",
+      "evolvesFromId": 0,
+      "basicMoveId": 55,
+      "learnset": [
+        {
+          "level": 6,
+          "order": 1,
+          "moveId": 300
+        },
+        {
+          "level": 6,
+          "order": 2,
+          "moveId": 346
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 55
+        },
+        {
+          "level": 13,
+          "order": null,
+          "moveId": 426
+        },
+        {
+          "level": 15,
+          "order": null,
+          "moveId": 133
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 352
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 222
+        },
+        {
+          "level": 25,
+          "order": 1,
+          "moveId": 156
+        },
+        {
+          "level": 25,
+          "order": 2,
+          "moveId": 173
+        },
+        {
+          "level": 28,
+          "order": null,
+          "moveId": 401
+        },
+        {
+          "level": 32,
+          "order": null,
+          "moveId": 89
+        },
+        {
+          "level": 35,
+          "order": null,
+          "moveId": 330
+        },
+        {
+          "level": 39,
+          "order": null,
+          "moveId": 248
+        },
+        {
+          "level": 44,
+          "order": null,
+          "moveId": 90
+        }
+      ]
+    },
+    {
+      "id": 340,
+      "identifier": "whiscash",
+      "evolvesFromId": 339,
+      "basicMoveId": 55,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 300
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 346
+        },
+        {
+          "level": 1,
+          "order": 5,
+          "moveId": 55
+        },
+        {
+          "level": 6,
+          "order": 1,
+          "moveId": 300
+        },
+        {
+          "level": 6,
+          "order": 2,
+          "moveId": 346
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 55
+        },
+        {
+          "level": 13,
+          "order": null,
+          "moveId": 426
+        },
+        {
+          "level": 15,
+          "order": null,
+          "moveId": 133
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 352
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 222
+        },
+        {
+          "level": 25,
+          "order": 1,
+          "moveId": 156
+        },
+        {
+          "level": 25,
+          "order": 2,
+          "moveId": 173
+        },
+        {
+          "level": 28,
+          "order": null,
+          "moveId": 401
+        },
+        {
+          "level": 30,
+          "order": null,
+          "moveId": 428
+        },
+        {
+          "level": 34,
+          "order": null,
+          "moveId": 89
+        },
+        {
+          "level": 39,
+          "order": null,
+          "moveId": 330
+        },
+        {
+          "level": 45,
+          "order": null,
+          "moveId": 248
+        },
+        {
+          "level": 52,
+          "order": null,
+          "moveId": 90
+        }
+      ]
+    },
+    {
+      "id": 341,
+      "identifier": "corphish",
+      "evolvesFromId": 0,
+      "basicMoveId": 145,
+      "learnset": [
+        {
+          "level": 1,
+          "order": null,
+          "moveId": 145
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 106
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 43
+        },
+        {
+          "level": 14,
+          "order": null,
+          "moveId": 61
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 182
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 458
+        },
+        {
+          "level": 26,
+          "order": null,
+          "moveId": 400
+        },
+        {
+          "level": 34,
+          "order": null,
+          "moveId": 269
+        },
+        {
+          "level": 37,
+          "order": null,
+          "moveId": 14
+        },
+        {
+          "level": 39,
+          "order": null,
+          "moveId": 242
+        }
+      ]
+    },
+    {
+      "id": 342,
+      "identifier": "crawdaunt",
+      "evolvesFromId": 341,
+      "basicMoveId": 145,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 145
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 106
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 43
+        },
+        {
+          "level": 5,
+          "order": null,
+          "moveId": 106
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 43
+        },
+        {
+          "level": 14,
+          "order": null,
+          "moveId": 61
+        },
+        {
+          "level": 17,
+          "order": null,
+          "moveId": 182
+        },
+        {
+          "level": 20,
+          "order": null,
+          "moveId": 458
+        },
+        {
+          "level": 26,
+          "order": null,
+          "moveId": 400
+        },
+        {
+          "level": 30,
+          "order": null,
+          "moveId": 129
+        },
+        {
+          "level": 36,
+          "order": null,
+          "moveId": 269
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 14
+        },
+        {
+          "level": 43,
+          "order": null,
+          "moveId": 242
+        }
+      ]
+    },
+    {
+      "id": 355,
+      "identifier": "duskull",
+      "evolvesFromId": 0,
+      "basicMoveId": 310,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 43
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 101
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 310
+        },
+        {
+          "level": 14,
+          "order": null,
+          "moveId": 193
+        },
+        {
+          "level": 22,
+          "order": null,
+          "moveId": 228
+        },
+        {
+          "level": 30,
+          "order": null,
+          "moveId": 109
+        },
+        {
+          "level": 33,
+          "order": null,
+          "moveId": 174
+        },
+        {
+          "level": 38,
+          "order": null,
+          "moveId": 506
+        },
+        {
+          "level": 41,
+          "order": null,
+          "moveId": 247
+        },
+        {
+          "level": 46,
+          "order": null,
+          "moveId": 212
+        },
+        {
+          "level": 49,
+          "order": null,
+          "moveId": 371
+        },
+        {
+          "level": 54,
+          "order": null,
+          "moveId": 248
+        }
+      ]
+    },
+    {
+      "id": 356,
+      "identifier": "dusclops",
+      "evolvesFromId": 355,
+      "basicMoveId": 310,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 1,
+          "moveId": 248
+        },
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 7
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 9
+        },
+        {
+          "level": 1,
+          "order": 7,
+          "moveId": 43
+        },
+        {
+          "level": 1,
+          "order": 8,
+          "moveId": 101
+        },
+        {
+          "level": 1,
+          "order": 10,
+          "moveId": 310
+        },
+        {
+          "level": 9,
+          "order": null,
+          "moveId": 310
+        },
+        {
+          "level": 14,
+          "order": null,
+          "moveId": 193
+        },
+        {
+          "level": 22,
+          "order": null,
+          "moveId": 228
+        },
+        {
+          "level": 30,
+          "order": null,
+          "moveId": 109
+        },
+        {
+          "level": 33,
+          "order": null,
+          "moveId": 174
+        },
+        {
+          "level": 37,
+          "order": null,
+          "moveId": 325
+        },
+        {
+          "level": 40,
+          "order": null,
+          "moveId": 506
+        },
+        {
+          "level": 45,
+          "order": null,
+          "moveId": 247
+        },
+        {
+          "level": 52,
+          "order": null,
+          "moveId": 212
+        },
+        {
+          "level": 57,
+          "order": null,
+          "moveId": 371
+        },
+        {
+          "level": 64,
+          "order": null,
+          "moveId": 248
+        }
+      ]
+    },
+    {
+      "id": 359,
+      "identifier": "absol",
+      "evolvesFromId": 0,
+      "basicMoveId": 364,
+      "learnset": [
+        {
+          "level": 1,
+          "order": 2,
+          "moveId": 248
+        },
+        {
+          "level": 1,
+          "order": 3,
+          "moveId": 10
+        },
+        {
+          "level": 1,
+          "order": 4,
+          "moveId": 364
+        },
+        {
+          "level": 1,
+          "order": 5,
+          "moveId": 43
+        },
+        {
+          "level": 1,
+          "order": 6,
+          "moveId": 98
+        },
+        {
+          "level": 4,
+          "order": null,
+          "moveId": 43
+        },
+        {
+          "level": 7,
+          "order": null,
+          "moveId": 98
+        },
+        {
+          "level": 10,
+          "order": null,
+          "moveId": 228
+        },
+        {
+          "level": 13,
+          "order": null,
+          "moveId": 269
+        },
+        {
+          "level": 16,
+          "order": null,
+          "moveId": 44
+        },
+        {
+          "level": 19,
+          "order": null,
+          "moveId": 104
+        },
+        {
+          "level": 22,
+          "order": null,
+          "moveId": 163
+        },
+        {
+          "level": 25,
+          "order": null,
+          "moveId": 14
+        },
+        {
+          "level": 29,
+          "order": null,
+          "moveId": 400
+        },
+        {
+          "level": 41,
+          "order": null,
+          "moveId": 382
+        },
+        {
+          "level": 45,
+          "order": null,
+          "moveId": 389
+        },
+        {
+          "level": 49,
+          "order": null,
+          "moveId": 13
+        },
+        {
+          "level": 53,
+          "order": null,
+          "moveId": 248
         }
       ]
     },
@@ -9394,6 +11090,26 @@
         "maxHits": 0,
         "minTurns": 0,
         "maxTurns": 0
+      },
+      "statChanges": [],
+      "battleSupported": false
+    },
+    {
+      "id": 217,
+      "identifier": "present",
+      "name": "礼物",
+      "description": "有时会对目标造成伤害，有时会恢复目标的体力。",
+      "power": 0,
+      "type": "normal",
+      "damageClass": "physical",
+      "accuracy": 90,
+      "pp": 15,
+      "priority": 0,
+      "effectChance": 0,
+      "target": "selected-pokemon",
+      "meta": {
+        "ailment": "none",
+        "category": "damage"
       },
       "statChanges": [],
       "battleSupported": false

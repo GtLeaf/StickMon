@@ -30,10 +30,15 @@
 namespace {
 bool invalid(unsigned line) { std::fprintf(stderr,"[Content] invalid catalog at %u\n",line); return false; }
 template<class P> bool point(const P& p) { return p.x<16 && p.y<12; }
+bool playableSpecies(uint16_t id) {
+    const auto* species = findSpecies(id);
+    return species && !species->assetsPending;
+}
 }
 bool validateContentCatalog() {
     if(!ResourceFS::ins().begin()) return invalid(__LINE__);
-    if(!speciesTable() || !speciesCount() || starterSpecies().id!=1) return invalid(__LINE__);
+    if(!speciesTable() || !speciesCount() || starterSpecies().id!=1 || starterSpecies().assetsPending)
+        return invalid(__LINE__);
     for(unsigned i=0;i<speciesCount();++i) {
         const auto& s=speciesTable()[i];
         if(!s.id || !s.name || !*s.name || uint8_t(s.type1)>17 ||
@@ -94,7 +99,16 @@ bool validateContentCatalog() {
         !a.recommendedLevel || a.recommendedLevel>Game::LEVEL_MAX || a.depthSpread>10 || a.encounterChance>10000 ||
         uint16_t(a.battleBackground)>=uint16_t(GameAssets::Kind::COUNT)) return invalid(__LINE__);
     for(unsigned i=0;i<speciesCount();++i) {
-        const auto id=speciesTable()[i].id;
+        const auto& species=speciesTable()[i];
+        if(species.assetsPending) {
+            for(unsigned j=0;j<speciesCount();++j) {
+                const auto& predecessor=speciesTable()[j];
+                if(!predecessor.assetsPending && isDirectEvolutionTarget(predecessor,species))
+                    return invalid(__LINE__);
+            }
+            continue;
+        }
+        const auto id=species.id;
         PokemonSprites::WalkingAnimation animation{};PokemonSprites::PetAnimationProfile profile{};
         if(!PokemonSprites::walkingAnimation(id,PokemonSprites::WalkDirection::DOWN,animation) ||
            !PokemonSprites::petAnimationProfile(id,profile) || !PokemonMotion::profile(id) || !PokemonBattleSizes::front(id).width) return invalid(__LINE__);
@@ -105,7 +119,7 @@ bool validateContentCatalog() {
     for(const auto& p:ExploreEcology::PROFILES) if(uint8_t(p.temperament)>3 || uint8_t(p.locomotion)>2) return invalid(__LINE__);
     for(const auto& f:ExploreEcology::GROUP_FAMILIES) {
         if(f.count<2 || f.count>3) return invalid(__LINE__);
-        for(unsigned i=0;i<f.count;++i) if(!findSpecies(f.species[i])) return invalid(__LINE__);
+        for(unsigned i=0;i<f.count;++i) if(!playableSpecies(f.species[i])) return invalid(__LINE__);
     }
     bool items[size_t(Game::ItemId::COUNT)]{};
     for(const auto& e:ItemCatalog::ITEMS) {
@@ -134,18 +148,20 @@ bool validateContentCatalog() {
     if(!coins.ready()) return invalid(__LINE__);
     for(const auto& boss:ExploreBoss::CONFIGS) {
         if(!boss.level || boss.level>Game::LEVEL_MAX || !boss.experiencePercent) return invalid(__LINE__);
-        for(auto id:boss.speciesIds) if(!findSpecies(id)) return invalid(__LINE__);
+        for(auto id:boss.speciesIds) if(!playableSpecies(id)) return invalid(__LINE__);
     }
     for(unsigned i=0;i<6;++i) {
         const auto table=ExploreEncounters::tableForArea(i);
-        if(!table.entries || !table.count) return invalid(__LINE__);
-        unsigned sum=0;
+        if(!table.entries || !table.count || table.count>ExplorePool::MAX_SOURCE_ENTRIES)
+            return invalid(__LINE__);
         for(unsigned j=0;j<table.count;++j) {
             const auto& e=table.entries[j];
-            if(!findSpecies(e.speciesId) || !e.minLevel || e.minLevel>e.maxLevel || e.maxLevel>Game::LEVEL_MAX || uint8_t(e.rarity)>5) return invalid(__LINE__);
-            sum+=e.weight;
+            if(!playableSpecies(e.speciesId) || !e.minLevel || e.minLevel>e.maxLevel ||
+               e.maxLevel>Game::LEVEL_MAX || (e.habitat & ~ExploreHabitat::KNOWN))
+                return invalid(__LINE__);
+            for(unsigned previous=0;previous<j;++previous)
+                if(table.entries[previous].speciesId==e.speciesId) return invalid(__LINE__);
         }
-        if(sum!=100) return invalid(__LINE__);
         const auto& pickups=ExplorePickupRules::tableForArea(i);
         if(!pickups.entries || !pickups.count || pickups.minCoin>pickups.maxCoin) return invalid(__LINE__);
         unsigned pickupWeight=0;

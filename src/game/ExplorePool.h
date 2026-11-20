@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ExploreHabitat.h"
 
 // 栖息地轮换（大量出现）活跃池逻辑，规则见 doc/探索模式精灵分布方案_v1.0.md §七。
 // 纯数据 + inline 实现，不依赖 Arduino / 硬件，固件与主机端测试（tools/explore_pool_host.cpp）共用。
@@ -33,12 +34,14 @@ struct SourceEntry {
     uint16_t speciesId;
     uint8_t weight;
     Rarity rarity;
+    uint8_t habitat = 0;
 };
 
 struct PoolEntry {
     uint16_t speciesId;
     uint8_t weight;
     Rarity rarity;
+    uint8_t habitat = 0;
 };
 
 struct Pool {
@@ -180,12 +183,12 @@ inline Pool buildPool(const SourceEntry* source, uint8_t sourceCount, uint32_t s
     for (uint8_t i = 0; i < baseSlots; ++i) {
         const SourceEntry& entry = source[commonIndices[i]];
         pool.entries[pool.count++] =
-            PoolEntry{entry.speciesId, entry.weight, entry.rarity};
+            PoolEntry{entry.speciesId, entry.weight, entry.rarity, entry.habitat};
     }
     for (uint8_t i = 0; i < rareSlots; ++i) {
         const SourceEntry& entry = source[rareIndices[i]];
         pool.entries[pool.count++] =
-            PoolEntry{entry.speciesId, entry.weight, entry.rarity};
+            PoolEntry{entry.speciesId, entry.weight, entry.rarity, entry.habitat};
     }
     return pool;
 }
