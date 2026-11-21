@@ -123,15 +123,26 @@ bool prepare(bool night,uint16_t placedFurniture) {
                            ((rgb[i * 3 + 1] & 0xfc) << 3) | (rgb[i * 3 + 2] >> 3);
         Platform::memory().release(rgb);
     } else if (night) applyNightPatch();
-    if(placedFurniture&1u){
-        const int scale=room.artScale();
-        const int x=FurnitureArt::FRAME_WORLD_X*scale,
-                  y=FurnitureArt::FRAME_ART_Y*scale,
-                  size=FurnitureArt::FRAME_WORLD_SIZE*scale;
-        for(int row=0;row<size;++row)for(int col=0;col<size;++col){
-            const int px=x+col,py=y+row+col/3;
-            if(px>=0&&px<room.artWidth()&&py>=0&&py<room.artHeight())
-                roomBuffer[py*room.artWidth()+px]=FurnitureArt::framePixel(col*112/size,row*112/size);
+    if (placedFurniture & 1u) {
+        const int scale = room.artScale();
+        const int x = FurnitureArt::FRAME_WORLD_X * scale, y = FurnitureArt::frameTop(scale, scale);
+        const int size = FurnitureArt::FRAME_WORLD_SIZE * scale;
+        // Project the front, narrow wooden side and contact shadow onto the sloping wall.
+        for (int col = 0; col < size + 2; ++col) {
+            const int px = x + col;
+            if (px >= room.artWidth()) break;
+            const int top = y + std::min(col, size - 1) / 3;
+            for (int row = 0; row < size + scale + 1 && top + row < room.artHeight(); ++row) {
+                uint16_t& pixel = roomBuffer[(top + row) * room.artWidth() + px];
+                if (col < size && row < size) {
+                    pixel = FurnitureArt::framePixel(col, row, size);
+                } else if (col <= size && row >= 1 && row < size + scale) {
+                    pixel = PixelRenderer::rgb(100, 62, 38);
+                } else if (col >= 1 && row >= 2) {
+                    // Retain three quarters of the underlying day or night wall color.
+                    pixel = ((pixel >> 1) & 0x7bef) + ((pixel >> 2) & 0x39e7);
+                }
+            }
         }
     }
     roomBufferFurniture=placedFurniture;

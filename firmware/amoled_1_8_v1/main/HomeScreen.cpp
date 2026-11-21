@@ -937,7 +937,7 @@ AmoledUi::Rect homeWallFrameBounds(int cameraX, int cameraY) {
     constexpr int scale = AmoledUi::RESOURCE_SCALE;
     constexpr int size = FurnitureArt::FRAME_WORLD_SIZE * scale;
     return {(FurnitureArt::FRAME_WORLD_X - cameraX) * scale,
-            HOME_ROOM_TOP + (room.roomY() + FurnitureArt::FRAME_ART_Y - cameraY) * scale,
+            HOME_ROOM_TOP + (room.roomY() - cameraY) * scale + FurnitureArt::frameTop(room.artScale(), scale),
             size, size + size / 3};
 }
 

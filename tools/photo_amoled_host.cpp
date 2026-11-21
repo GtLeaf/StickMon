@@ -216,7 +216,7 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     app.homeMainActor.y=RoomResource::ins().roomY()+108;
     app.updateCamera();
     const int frameX=app.worldToScreenX(203);
-    const int frameY=app.worldToScreenY(RoomResource::ins().roomY()+68);
+    const int frameY=app.worldToScreenY(RoomResource::ins().roomY()+59.5f);
     assert(frameX>=0&&frameX<368&&frameY>=48&&frameY<344);
     app.gameState.room.ownedFurniture|=1;
     app.gameState.room.placedFurniture|=1;
