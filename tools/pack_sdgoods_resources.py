@@ -4,16 +4,23 @@
 import argparse
 from pathlib import Path
 import struct
+from wallpaper_catalog import CATALOG, exported_wallpapers
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = struct.Struct('<192sII')
-EXTENSIONS = {'.json', '.smonsp', '.smonroom', '.smonfurn', '.smonfx', '.smonfont', '.smondialogue', '.smonmenu'}
+EXTENSIONS = {'.json', '.smonsp', '.smonroom', '.smonwall', '.smonfurn', '.smonfx', '.smonfont', '.smondialogue', '.smonmenu'}
 
 
-def pack(data: Path, output: Path, *, audio_only=False):
+def pack(data: Path, output: Path, *, audio_only=False, catalog=None):
+    # Deploy the source catalog with the project's packs. Standalone archive
+    # callers can supply their own catalog, or package an arbitrary data tree.
+    if catalog is None and data.resolve() == ROOT / 'data':
+        catalog = CATALOG
+    wallpapers = set(exported_wallpapers(data, catalog)) if catalog and not audio_only else None
     files = sorted(p for p in data.rglob('*') if p.is_file()
                    and (p.suffix in {'.smonaudio', '.smoncry'} if audio_only else
                         p.suffix in EXTENSIONS or p.name == 'bgm_market.smonaudio')
+                   and (p.suffix != '.smonwall' or wallpapers is None or p in wallpapers)
                    and p.name != 'ui_amoled.smonfx')
     offset = 8 + ENTRY.size * len(files)
     index, payload = [], []
@@ -38,7 +45,8 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=Path, default=ROOT / 'data')
     parser.add_argument('--output', type=Path,
                         default=ROOT / '.stick-local/firmware/sdgoods/stickmon_resources.bin')
+    parser.add_argument('--catalog', type=Path, help='Wallpaper catalog for a custom data tree')
     parser.add_argument('--audio-only', action='store_true',
                         help='Build supplemental audio archive for the resources data partition')
     args = parser.parse_args()
-    pack(args.data, args.output, audio_only=args.audio_only)
+    pack(args.data, args.output, audio_only=args.audio_only, catalog=args.catalog)

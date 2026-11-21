@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "core/RoomFurniture.h"
+#include "game/WallpaperCatalog.h"
 
 class RoomResource {
 public:
@@ -36,6 +37,9 @@ public:
     // Switch only after a complete resource has been read and validated.
     bool selectRoom(const char* roomId);
     bool setFurniture(const char* slot, const char* assetId);
+    // Pass the decoded day/night surface before compositing layered furniture.
+    // A missing, mismatched or invalid overlay leaves every pixel intact.
+    bool applyWallpaper(uint16_t* roomPixels, bool night, Game::MarketWorkshop::Wallpaper wallpaper) const;
     bool layered() const { return layered_; }
     const RoomFurniture& furniture() const { return furniture_; }
     uint32_t revision() const { return revision_; }

@@ -42,14 +42,15 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
     constexpr size_t MYSTERY_BOX_EXTENSION_BYTES = 2;
     constexpr size_t SEASON_EXTENSION_BYTES = 4 + 8 + 8 + 1 + 17 + 1;
     constexpr size_t SUPPLY_EXTENSION_BYTES = 3;
-    const size_t removedBytes = (schema <= 8 ? SUPPLY_EXTENSION_BYTES : 0) +
+    constexpr size_t WALLPAPER_ID_BYTES = 1;
+    const size_t removedBytes = WALLPAPER_ID_BYTES + (schema <= 8 ? SUPPLY_EXTENSION_BYTES : 0) +
                                 (schema <= 7 ? SEASON_EXTENSION_BYTES : 0) +
                                 (schema <= 6 ? MYSTERY_BOX_EXTENSION_BYTES : 0) +
                                 (schema <= 5 ? CARE_STALL_EXTENSION_BYTES : 0) +
                                 (schema <= 4 ? SHOP_EXTENSION_BYTES : 0) +
                                 (schema <= 3 ? MARKET_EXTENSION_BYTES : 0) +
                                 (schema <= 2 ? CARE_EXTENSION_BYTES : 0) + (schema == 1 ? 1 : 0);
-    if (schema < 1 || schema > 9 || !encoded ||
+    if (schema < 1 || schema > 10 || !encoded ||
         length < LEGACY_PITY_OFFSET + CURRENT_PITY_BYTES + VIEW_PAYLOAD_BYTES + removedBytes) {
         return false;
     }
@@ -57,7 +58,9 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
     out.clear();
     out.reserve(length - removedBytes + Game::LEGACY_FRIENDSHIP_PITY_COUNT - CURRENT_PITY_BYTES);
     out.insert(out.end(), encoded, encoded + LEGACY_PITY_OFFSET);
-    out.insert(out.end(), Game::LEGACY_FRIENDSHIP_PITY_COUNT, 0);
+    if (schema < 10) out.insert(out.end(), Game::LEGACY_FRIENDSHIP_PITY_COUNT, 0);
+    else out.insert(out.end(), encoded + LEGACY_PITY_OFFSET,
+                    encoded + LEGACY_PITY_OFFSET + CURRENT_PITY_BYTES);
     out.insert(out.end(), encoded + LEGACY_PITY_OFFSET + CURRENT_PITY_BYTES, encoded + extensionOffset);
     out.insert(out.end(), encoded + extensionOffset + removedBytes, encoded + length);
     out[4] = static_cast<uint8_t>(schema);
@@ -66,7 +69,7 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
     out[SaveCodec::HEADER_BYTES + 4] =
         static_cast<uint8_t>(schema == 1 ? 3 : schema == 2 ? 4 : schema == 3 ? 5 :
                              schema == 4 ? 6 : schema == 5 ? 7 : schema <= 7 ? 8 :
-                             schema == 8 ? 9 : 10);
+                             schema == 8 ? 9 : schema == 9 ? 10 : 11);
     out[SaveCodec::HEADER_BYTES + 5] =
         0;
     const uint16_t payloadLength =

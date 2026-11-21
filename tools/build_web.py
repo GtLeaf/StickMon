@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 from amoled_source import amoled_runtime_sources
+from wallpaper_catalog import exported_wallpapers
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -58,8 +59,11 @@ def stage_resources(target, stage):
                         str(data / "packs/dev/game/ui.smonfx"),
                         str(data / "packs/dev/game/ui_amoled.smonfx")], check=True)
     # Only runtime files; exclude source PNGs and unused target-specific UI packs.
-    extensions = {".json", ".smonsp", ".smonroom", ".smonfurn", ".smonfx", ".smonfont", ".smonaudio", ".smoncry", ".smondata", ".smonmenu"}
+    extensions = {".json", ".smonsp", ".smonroom", ".smonwall", ".smonfurn", ".smonfx", ".smonfont", ".smonaudio", ".smoncry", ".smondata", ".smonmenu"}
+    wallpapers = set(exported_wallpapers(data, ROOT / 'origin_asset/room/wallpapers/catalog.json'))
     for source in sorted(data.rglob("*")):
+        if source.suffix == ".smonwall" and source not in wallpapers:
+            continue
         if not source.is_file() or source.suffix not in extensions:
             continue
         relative = source.relative_to(data)

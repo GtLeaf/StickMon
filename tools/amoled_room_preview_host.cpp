@@ -2,8 +2,11 @@
 #include "core/RoomResource.h"
 #include "core/RoomRenderer.h"
 #include "core/UiStrings.h"
+#include "game/MarketWorkshopService.h"
 #include "platform/desktop/DesktopPlatform.h"
+#include "presentation/FurnitureArt.h"
 #include "presentation/PixelRenderer.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -54,11 +57,14 @@ struct AmoledRoomPreviewTestAccess {
         assert(room.layered() && room.furniture().count() == 6);
         const std::string originalBed = room.furniture().selected("bed");
         const std::string originalRug = room.furniture().selected("rug");
-        auto exportFrame = [&](const std::string& name, bool night) {
+        using Wallpaper = Game::MarketWorkshop::Wallpaper;
+        auto exportFrame = [&](const std::string& name, bool night, uint16_t furniture = 0,
+                               Wallpaper wallpaper = Wallpaper::ORIGINAL) {
             auto* old = canvas.rawPixels();
             std::vector<uint16_t> full(room.artWidth() * room.artHeight());
             canvas.attach({full.data(), room.artWidth(), room.artHeight(), false});
-            assert(RoomRenderer::drawViewport(0, 0, room.artWidth(), room.artHeight(), 0, 0, night, room.artScale()));
+            assert(RoomRenderer::drawViewport(0, 0, room.artWidth(), room.artHeight(),
+                0, 0, night, room.artScale(), furniture, wallpaper));
             const std::string path = std::string(output) + "/" + name + (night ? "-night.rgb565" : "-day.rgb565");
             FILE* file = std::fopen(path.c_str(), "wb"); assert(file);
             assert(std::fwrite(full.data(), 2, full.size(), file) == full.size()); std::fclose(file);
@@ -67,6 +73,59 @@ struct AmoledRoomPreviewTestAccess {
         };
         const auto original = exportFrame("original", false);
         exportFrame("original", true);
+        constexpr auto forest = Wallpaper::FOREST;
+        constexpr auto flowers = static_cast<Wallpaper>(37);
+        for (bool night : {false, true}) {
+            const auto first = exportFrame("first-forest", night, 0, forest);
+            assert(RoomRenderer::preparePreview(night, 0, flowers));
+            const auto allocations = memory.allocations, opens = resources.opens;
+            const auto other = exportFrame("flowers", night, 0, flowers);
+            assert(first != other && "Changing only the selected catalog ID must change the room");
+            const uint16_t flowerColor = PixelRenderer::rgb(240, 40, 136);
+            assert(std::count(other.begin(), other.end(), flowerColor) > 1000);
+            assert(memory.allocations == allocations && resources.opens == opens);
+            assert(RoomRenderer::preparePreview(night, 0, forest));
+            assert(first == exportFrame("layered-forest", night, 0, forest));
+        }
+
+        // A live binding overlays the preview after the cached furniture. Compare
+        // both panel byte orders and a single-row redraw to a native room sample.
+        constexpr uint16_t decorated = Game::MarketWorkshop::PHOTO_FRAME;
+        auto decoratedRoom = exportFrame("decorated", false, decorated, flowers);
+        const int scale = room.artScale(), size = FurnitureArt::WALL_PHOTO_SIZE;
+        const int inset = (FurnitureArt::FRAME_WORLD_SIZE - size) / 2;
+        uint16_t photo[FurnitureArt::WALL_PHOTO_SIZE * FurnitureArt::WALL_PHOTO_SIZE];
+        for (int row = 0; row < size; ++row) for (int col = 0; col < size; ++col) {
+            photo[row * size + col] = uint16_t(0x8000 + row * size + col);
+            for (int i = 0; i < scale; ++i) for (int j = 0; j < scale; ++j) {
+                const int column = (inset + col) * scale + j;
+                const int px = FurnitureArt::FRAME_WORLD_X * scale + column;
+                const int py = FurnitureArt::frameTop(scale, scale) + (inset + row) * scale + i + column / 3;
+                decoratedRoom[py * room.artWidth() + px] = photo[row * size + col];
+            }
+        }
+        auto* panel = canvas.rawPixels();
+        constexpr int previewWidth = 280, previewHeight = 190;
+        const int drawnHeight = previewWidth * room.artHeight() / room.artWidth();
+        const int top = (previewHeight - drawnHeight) / 2;
+        const auto opensBefore = resources.opens, allocationsBefore = memory.allocations;
+        for (bool swapped : {false, true}) {
+            std::vector<uint16_t> pixels(previewWidth * previewHeight);
+            canvas.attach({pixels.data(), previewWidth, previewHeight, swapped});
+            for (int y = top; y < top + drawnHeight; ++y) {
+                canvas.setClipRect(0, y, previewWidth, 1);
+                assert(RoomRenderer::drawPreview(0, 0, previewWidth, previewHeight, false, decorated, photo, flowers));
+                for (int x = 0; x < previewWidth; ++x) {
+                    const int src = (y - top) * room.artHeight() / drawnHeight * room.artWidth() +
+                                    x * room.artWidth() / previewWidth;
+                    assert(canvas.readPixel(x, y) == decoratedRoom[src]);
+                }
+                if (y + 1 < previewHeight) assert(canvas.rawPixels()[(y + 1) * previewWidth] == 0);
+            }
+        }
+        assert(resources.opens == opensBefore && memory.allocations == allocationsBefore);
+        canvas.attach({panel, 368, 448, false});
+        assert(original == exportFrame("after-preview", false));
         const int foodX = room.foodX(), bedX = room.bedX(), doorX = room.doorwayInsideX();
         auto snapshot = [&]() {
             std::vector<uint8_t> result;
@@ -146,9 +205,15 @@ struct AmoledRoomPreviewTestAccess {
         assert(room.layered() && room.height() == 185 && room.foodX() == foodX + 10 && room.furniture().count() == 6);
         assert(RoomRenderer::drawViewport(0, 56, 368, 288, 0, 0, true, 2));
         exportFrame("alternate", true);
+        assert(!RoomRenderer::preparePreview(true, 0, forest));
+        assert(exportFrame("alternate", true) == exportFrame("alternate-fallback", true, 0, forest));
         assert(room.selectRoom("legacy"));
         assert(!room.layered() && room.furniture().count() == 0);
         assert(!room.setFurniture("bed", "bed_cloud"));
+        for (bool night : {false, true}) {
+            assert(RoomRenderer::preparePreview(night, 0, forest));
+            exportFrame("baked-forest", night, 0, forest);
+        }
         assert(RoomRenderer::drawViewport(0, 56, 368, 288, 0, 0, false, 2));
         assert(room.selectRoom("standard"));
         assert(originalBed == room.furniture().selected("bed"));

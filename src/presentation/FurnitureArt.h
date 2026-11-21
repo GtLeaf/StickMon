@@ -4,6 +4,7 @@
 
 namespace FurnitureArt {
 inline constexpr int FRAME_WORLD_X = 193, FRAME_WORLD_SIZE = 21;
+inline constexpr int WALL_PHOTO_SIZE = 13;
 // The upper-left corner lies 5 native (2x) pixels above the wall-aligned position.
 inline constexpr float FRAME_ART_Y = 45.5f;
 

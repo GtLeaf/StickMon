@@ -37,18 +37,7 @@ static void capture(const char* name) {
 }
 #include "core/RoomResource.h"
 #include "presentation/MenuGrid.h"
-class HomePower final:public Platform::IPowerDevice {
-public:
-    explicit HomePower(Platform::IPowerDevice& b):base(b){}
-    int batteryLevel()override{return base.batteryLevel();}
-    Platform::WakeReason wakeReason()const override{return base.wakeReason();}
-    uint32_t hardwareRandom()override{return base.hardwareRandom();}
-    size_t externalMemorySize()const override{return 8*1024*1024;}
-    size_t externalMemoryFree()const override{return 8*1024*1024;}
-    void restart()override{base.restart();}
-    void enterDeepSleep(uint64_t ms,bool ext)override{base.enterDeepSleep(ms,ext);}
-private:Platform::IPowerDevice& base;
-};
+#include "home_host_power.h"
 namespace AmoledV1 {
 struct AmoledAppTestAccess {
  static void run(AmoledApp& app,FaultStore& blobs){
@@ -73,9 +62,22 @@ struct AmoledAppTestAccess {
 
     event(T::DOWN,184,132);app.setDisplayLocked(true);app.setDisplayLocked(false);event(T::UP,184,132);assert(ui.page()==P::LIBRARY);
     tap(184,132);assert(ui.page()==P::PREVIEW&&s.room.placedFurniture==0x4000);shot("amoled-04-original");
+    auto previewWall = [&]() {
+        std::vector<uint16_t> wall;
+        for (int y = 109; y < 129; ++y)
+            for (int x = 128; x < 172; ++x) wall.push_back(canvas.readPixel(x, y));
+        return wall;
+    };
+    const auto originalWall = previewWall();
+    s.wallpaperId = static_cast<uint8_t>(Game::MarketWorkshop::Wallpaper::FOREST);
+    app.forceFullRender();
+    app.render(canvas);
+    const auto equippedWall = previewWall();
+    assert(equippedWall != originalWall);
     for(int y=316;y<386;++y)for(int x=24;x<344;++x)assert(canvas.readPixel(x,y)==0&&"Preview must not contain furniture icon/name/status");
     s.settings.idleTimeoutIndex=0;app.lockRequested=false;app.lastInteractionMs=time;time+=31000;app.update(time);assert(!app.consumeLockRequest()&&"Furniture comparison must suppress automatic lock");
     tap(184,414);assert(ui.page()==P::PREVIEW&&s.room.placedFurniture==0x4000);shot("amoled-05-trial");
+    assert(previewWall() == equippedWall && "Furniture trials retain the equipped wallpaper");
     assert(app.saveState());SaveManager saves;assert(saves.begin());Game::GameState loaded;MainSceneViewState v{};assert(saves.load(loaded,v));assert(loaded.room.placedFurniture==0x4000);
     tap(184,414);tap(42,40);assert(ui.page()==P::LIBRARY&&s.room.placedFurniture==0x4000);
     app.lockRequested=false;app.lastInteractionMs=time;time+=31000;app.update(time);assert(app.consumeLockRequest()&&"Library must restore the normal idle policy");
@@ -85,6 +87,7 @@ struct AmoledAppTestAccess {
     // The real home view consumes saved placement even after a cancelled preview.
     tap(42,40);tap(42,40);assert(app.sceneFlow.current()==AppSceneFlow::Scene::MAIN_MENU);app.sceneFlow.enter(AppSceneFlow::Scene::HOME);shot("amoled-07-home-placed");
     HomeViewModel savedHome;app.fillHomePetModel(savedHome);assert(savedHome.placedFurniture==1);
+    assert(savedHome.wallpaper == Game::MarketWorkshop::Wallpaper::FOREST);
     app.openRoomScene();tap(184,376);tap(184,132);event(T::DOWN,184,414);app.cancelTouch();event(T::UP,184,414);assert(ui.page()==P::PREVIEW&&s.room.placedFurniture==0x4001);
     tap(184,414);assert(ui.page()==P::PREVIEW&&s.room.placedFurniture==0x4001);tap(184,414);tap(42,40);assert(ui.page()==P::LIBRARY&&s.room.placedFurniture==0x4001);
     tap(184,132);tap(184,414);tap(42,40);assert(ui.page()==P::LIBRARY&&s.room.placedFurniture==0x4000&&s.room.ownedFurniture==0x4001);shot("amoled-08-removed");

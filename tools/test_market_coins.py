@@ -14,8 +14,13 @@ def main():
     p.add_argument('--native-only',action='store_true')
     args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
     binary=out/'coins';env=os.environ.copy();env.setdefault('ASAN_OPTIONS','detect_leaks=0')
+    catalog = out / 'test-wallpapers.inc'
+    catalog.write_text('{Wallpaper::ORIGINAL, "Original", 0, nullptr},\n'
+                       '{Wallpaper::FOREST, "Forest", 300, "forest"},\n'
+                       '{static_cast<Wallpaper>(37), "Sea", 90, "sea"},\n')
     subprocess.run(['c++','-std=c++17','-O1','-g','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
-                    '-fno-omit-frame-pointer','-Isrc','tools/market_coins_host.cpp','-o',str(binary)],cwd=ROOT,check=True,env=env)
+                    '-fno-omit-frame-pointer','-Isrc',f'-DSTICKMON_WALLPAPER_CATALOG_INCLUDE="{catalog}"',
+                    'tools/market_coins_host.cpp','-o',str(binary)],cwd=ROOT,check=True,env=env)
     subprocess.run([str(binary)],cwd=ROOT,check=True,env=env)
     if args.native_only:return
     stub=out/'uzlib_stub.c'

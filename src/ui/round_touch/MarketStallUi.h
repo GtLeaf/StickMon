@@ -103,9 +103,7 @@ inline void button(Rect r,const char* label,bool primary,bool disabled=false,int
     text(r.x+(r.w-width(label,size))/2,r.y+(r.h-size)/2,label,size,disabled?muted():primary?paper():ink());
 }
 inline void hud(uint32_t balance,const MarketCoinMotion* motion,int offset=0) {
-    MarketCoinMotion still;if(!motion)still.reset(balance);const auto f=motion?motion->frame():still.frame();
-    const int right=180+int(std::lround((f.widthDigits+1)*8));
-    MarketCoinHud::render(balance,motion,16+offset,32,{right,32,48,48});
+    MarketCoinHud::renderRound(balance,motion,offset);
 }
 
 // Frame the conversing player and vendor, excluding distant companions.

@@ -43,6 +43,8 @@ file(GLOB CONTENT_INPUTS CONFIGURE_DEPENDS "${STICKMON_ROOT}/src/game/*.h"
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${RESOURCE_INPUTS} ${CONTENT_INPUTS} "${STICKMON_ROOT}/tools/build_sdgoods_resources.py"
     "${STICKMON_ROOT}/tools/generate_sdgoods_catalog.py" "${STICKMON_ROOT}/tools/content_tables.py"
+    "${STICKMON_ROOT}/src/assets/WallpaperCatalog.inc"
+    "${STICKMON_ROOT}/origin_asset/room/wallpapers/catalog.json" "${STICKMON_ROOT}/tools/wallpaper_catalog.py"
     "${STICKMON_ROOT}/origin_asset/text/market_dialogue.json"
     "${STICKMON_ROOT}/tools/generate_market_dialogue.py")
 execute_process(COMMAND "${PACK_PYTHON}" "${STICKMON_ROOT}/tools/generate_market_dialogue.py" --check

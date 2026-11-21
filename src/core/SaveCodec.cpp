@@ -1,5 +1,6 @@
 #include "core/SaveCodec.h"
 #include "game/FriendshipPity.h"
+#include "game/MarketWorkshopService.h"
 
 #include <cstring>
 
@@ -318,6 +319,7 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u8(state.marketSupply.pendingAdvice);
     writer.u8(state.marketSupply.stockPlan);
     writer.u8(state.marketSupply.boxRoll2);
+    writer.u8(state.wallpaperId);
 }
 
 void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
@@ -473,6 +475,8 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
         state.marketSupply.stockPlan = reader.u8();
         state.marketSupply.boxRoll2 = reader.u8();
     }
+    if (schema >= 11) state.wallpaperId = reader.u8();
+    else Game::MarketWorkshop::migrateLegacyWallpaper(state);
     state.checksum = 0;
 }
 

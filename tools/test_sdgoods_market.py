@@ -2,6 +2,7 @@
 """Actual360px round engine and Kecleon transactions; no OSTB/V1 target builds."""
 import argparse,hashlib,json,os,re,subprocess,sys
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def build(out,external=False,sanitize=False,extra_flags=(),debug=True,host_source=None):
@@ -38,13 +39,29 @@ def build(out,external=False,sanitize=False,extra_flags=(),debug=True,host_sourc
     return binary
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True);p.add_argument('--save-only',action='store_true');p.add_argument('--external',action='store_true');p.add_argument('--sanitize',action='store_true');p.add_argument('--release',action='store_true');p.add_argument('--journey',choices=('market-lock',));a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--save-only', action='store_true')
+    p.add_argument('--external', action='store_true')
+    p.add_argument('--sanitize', action='store_true')
+    p.add_argument('--release', action='store_true')
+    p.add_argument('--journey', choices=('market-lock',))
+    p.add_argument('--catalog-fixture', action='store_true',
+                   help='Run the six-entry test catalog through the round market')
+    a = p.parse_args()
+    out = a.output.resolve()
+    out.mkdir(parents=True, exist_ok=True)
     resource=ROOT/'data'
     if a.external:
         from build_sdgoods_resources import stage
         resource=out/'resource-stage';stage(resource)
-    binary=build(out,a.external,a.sanitize,debug=not a.release)
-    subprocess.run([str(binary),str(resource),str(out),a.journey or ('save' if a.save_only else 'all'),'external' if a.external else 'embedded'],cwd=ROOT,check=True,env={**os.environ,'ASAN_OPTIONS':'detect_leaks=0','UBSAN_OPTIONS':'halt_on_error=1'})
+    context = nullcontext((resource, []))
+    if a.catalog_fixture:
+        from wallpaper_catalog_fixture import wallpaper_catalog_fixture
+        context = wallpaper_catalog_fixture(resource)
+    with context as (resource, flags):
+        binary=build(out,a.external,a.sanitize,extra_flags=flags,debug=not a.release)
+        subprocess.run([str(binary),str(resource),str(out),a.journey or ('save' if a.save_only else 'all'),'external' if a.external else 'embedded'],cwd=ROOT,check=True,env={**os.environ,'ASAN_OPTIONS':'detect_leaks=0','UBSAN_OPTIONS':'halt_on_error=1'})
     from PIL import Image
     for ppm in out.glob('*.ppm'):
         Image.open(ppm).save(ppm.with_suffix('.png'))

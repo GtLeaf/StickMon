@@ -15,7 +15,12 @@ inline uint16_t bit(uint16_t id){return id<16?uint16_t(1u<<id):0;}
 inline bool owned(const GameState& s,uint16_t id){return entry(id)&&(s.room.ownedFurniture&bit(id));}
 inline bool placed(const GameState& s,uint16_t id){return owned(s,id)&&(s.room.placedFurniture&bit(id));}
 inline bool replacing(const GameState& s,uint16_t id){const auto* e=entry(id);if(!e)return false;for(const auto& other:CATALOG)if(other.id!=id&&other.slot==e->slot&&placed(s,other.id))return true;return false;}
-inline uint16_t visibleMask(const GameState& s){uint16_t mask=0;for(const auto& e:CATALOG)if(placed(s,e.id))mask|=bit(e.id);return mask;}
+inline uint16_t visibleMask(const GameState& s) {
+    uint16_t mask = 0;
+    for (const auto& e : CATALOG)
+        if (placed(s, e.id)) mask |= bit(e.id);
+    return mask;
+}
 inline Result setPlaced(GameState& s,uint16_t id,bool place){
     const auto* selected=entry(id);if(!selected)return Result::UNKNOWN_ID;
     if(!owned(s,id))return Result::NOT_OWNED;

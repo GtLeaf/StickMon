@@ -1,4 +1,6 @@
 #include "game/MarketTransaction.h"
+#include "game/HomeFurnitureService.h"
+#include "game/MarketWorkshopService.h"
 #include "ui/common/MarketCoinMotion.h"
 #include <cassert>
 #include <cmath>
@@ -31,6 +33,73 @@ static void durableBoundary() {
     assert(tx.status==Status::COMMITTED&&events.size()==2&&events[1].delta()==500&&state.coins==1200);
     assert((Change{0,UINT32_MAX}.delta()==4294967295LL));
     assert((Change{UINT32_MAX,0}.delta()==-4294967295LL));
+}
+static void wallpaperTransactions() {
+    namespace Workshop = Game::MarketWorkshop;
+    using Wallpaper = Workshop::Wallpaper;
+    Game::GameState state{};
+    state.room.ownedFurniture = 0x4001;
+    state.room.placedFurniture = 0x4001;
+    state.coins = 299;
+    state.wallpaperId = 255;
+    assert(Workshop::equippedWallpaper(state) == Wallpaper::ORIGINAL);
+
+    unsigned saves = 0;
+    std::vector<Change> changes;
+    const auto apply = [&](Wallpaper wallpaper, bool saveWorks) {
+        return Game::MarketTransaction::commit(state,
+            [&](auto& s) { return Workshop::applyWallpaper(s, wallpaper); },
+            [&] { ++saves; return saveWorks; },
+            [&](Change change) { changes.push_back(change); });
+    };
+    assert(apply(Wallpaper::ORIGINAL, true).result == Workshop::Result::ALREADY);
+    const auto unknown = static_cast<Wallpaper>(255);
+    assert(apply(unknown, true).result == Workshop::Result::UNKNOWN_WALLPAPER);
+    assert(apply(Wallpaper::FOREST, true).result == Workshop::Result::INSUFFICIENT_COINS);
+    assert(state.coins == 299 && state.room.ownedFurniture == 0x4001 && saves == 0);
+    state.coins = 300;
+    assert(apply(Wallpaper::FOREST, false).status == Status::SAVE_FAILED);
+    assert(state.wallpaperId == 255);
+    assert(state.coins == 300 && state.room.ownedFurniture == 0x4001 && state.room.placedFurniture == 0x4001);
+    assert(changes.empty());
+    assert(apply(Wallpaper::FOREST, true).status == Status::COMMITTED);
+    assert(state.coins == 0 && changes.size() == 1 && changes[0].delta() == -300);
+    assert(Workshop::equippedWallpaper(state) == Wallpaper::FOREST);
+    assert(state.room.ownedFurniture == 0x4001 && state.room.placedFurniture == 0x4001);
+    assert(Game::HomeFurniture::visibleMask(state) == 1);
+    assert(!Game::HomeFurniture::entry(1));
+    assert(apply(Wallpaper::FOREST, true).result == Workshop::Result::ALREADY && saves == 2);
+
+    assert(apply(Wallpaper::ORIGINAL, false).status == Status::SAVE_FAILED);
+    assert(Workshop::equippedWallpaper(state) == Wallpaper::FOREST);
+    assert(Game::HomeFurniture::visibleMask(state) == 1);
+    assert(apply(Wallpaper::ORIGINAL, true).status == Status::COMMITTED);
+    assert(Game::HomeFurniture::visibleMask(state) == 1);
+    assert(state.room.ownedFurniture == 0x4001 && state.room.placedFurniture == 0x4001);
+    assert(apply(Wallpaper::FOREST, true).result == Workshop::Result::INSUFFICIENT_COINS);
+    state.coins = 300;
+    assert(apply(Wallpaper::FOREST, true).status == Status::COMMITTED);
+    assert(state.coins == 0 && changes.size() == 2 && Game::HomeFurniture::visibleMask(state) == 1);
+    assert(state.room.ownedFurniture == 0x4001);
+    assert(Game::HomeFurniture::setPlaced(state, 0, false) == Game::HomeFurniture::Result::OK);
+    assert(Game::HomeFurniture::visibleMask(state) == 0);
+    assert(Workshop::equippedWallpaper(state) == Wallpaper::FOREST);
+    assert(apply(Wallpaper::FOREST, true).result == Workshop::Result::ALREADY);
+#ifdef STICKMON_WALLPAPER_CATALOG_INCLUDE
+    state.room.ownedFurniture = 0x4003;
+    state.room.placedFurniture = 0x4002;
+    const auto sea = static_cast<Wallpaper>(37);
+    assert(apply(sea, true).result == Workshop::Result::INSUFFICIENT_COINS);
+    state.coins = 180;
+    assert(apply(sea, true).status == Status::COMMITTED);
+    assert(state.wallpaperId == 37 && state.coins == 90 && changes.back().delta() == -90);
+    assert(apply(sea, true).result == Workshop::Result::ALREADY);
+    assert(apply(Wallpaper::ORIGINAL, true).status == Status::COMMITTED);
+    assert(state.wallpaperId == 0 && state.coins == 90);
+    assert(apply(sea, true).status == Status::COMMITTED);
+    assert(state.wallpaperId == 37 && state.coins == 0);
+    assert(state.room.ownedFurniture == 0x4003 && state.room.placedFurniture == 0x4002);
+#endif
 }
 static void rollAndRetarget() {
     Ui::MarketCoinMotion m;m.reset(27400);auto f=m.frame();
@@ -73,5 +142,5 @@ static void carryBoundsAndMixedSigns() {
     f=m.frame();int visible=0;for(const auto& tag:f.tags){visible+=tag.visible;if(tag.visible)assert(tag.delta==-1);}
     assert(visible==2);m.update(1000);assert(!m.frame().tags[0].visible&&!m.frame().tags[1].visible);
 }
-int main(){durableBoundary();rollAndRetarget();carryBoundsAndMixedSigns();
-    std::puts("market-coins: atomic rollback/durable events, signed deltas, smooth per-digit retarget,450/900ms, carry/bounds, bounded tags and reset OK");}
+int main(){durableBoundary();wallpaperTransactions();rollAndRetarget();carryBoundsAndMixedSigns();
+    std::puts("market-coins: atomic rollback/durable events, single-use wallpaper purchases and free original restoration, signed deltas, smooth per-digit retarget,450/900ms, carry/bounds, bounded tags and reset OK");}

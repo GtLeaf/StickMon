@@ -303,6 +303,61 @@ RoomResource& RoomResource::ins() {
     return *instance;
 }
 
+bool RoomResource::applyWallpaper(uint16_t* roomPixels, bool night, Game::MarketWorkshop::Wallpaper wallpaper) const {
+    const auto* finish = Game::MarketWorkshop::wallpaperEntry(wallpaper);
+    if (!loaded_ || !roomPixels || !finish) return false;
+    if (!finish->asset) return true;  // Original walls are part of the room base.
+
+    struct __attribute__((packed)) Entry {
+        uint32_t baseFingerprint, offset, compressedBytes, crc32, rawBytes;
+    };
+    struct __attribute__((packed)) Header {
+        char magic[4];
+        uint16_t version, x, y, width, height, reserved;
+        Entry entries[4];  // Day/night with baked furniture, then plain layered bases.
+    } header{};
+    Platform::ResourceFile file;
+    if (!ResourcePack::ins().openWallpaper(finish->asset, file) ||
+        !readExact(file, &header, sizeof(header)) || std::memcmp(header.magic, "SMWL", 4) != 0 ||
+        header.version != 1 || header.reserved != 0 || !header.width || !header.height ||
+        header.x + header.width > artWidth_ || header.y + header.height > artHeight_) return false;
+
+    const Entry entry = header.entries[(layered_ ? 2 : 0) + (night ? 1 : 0)];
+    const uint32_t pixelCount = uint32_t(header.width) * header.height;
+    const uint32_t maskBytes = (pixelCount + 7) / 8;
+    if (entry.offset < sizeof(header) || entry.offset > file.size() || !entry.compressedBytes ||
+        entry.compressedBytes > file.size() - entry.offset || entry.rawBytes < maskBytes ||
+        entry.rawBytes > maskBytes + 2 * pixelCount ||
+        entry.baseFingerprint != fingerprint(reinterpret_cast<const uint8_t*>(roomPixels), baseRawBytes_) ||
+        !file.seek(entry.offset)) return false;
+
+    auto* patch = allocArray<uint8_t>(entry.rawBytes + 1);
+    if (!patch) return false;
+    bool valid = DeflateDecoder::inflateFileExact(file, entry.compressedBytes, patch, entry.rawBytes + 1,
+                                                  entry.rawBytes, entry.crc32);
+    if (valid) {
+        uint32_t replacements = 0;
+        for (uint32_t i = 0; i < maskBytes; ++i) replacements += __builtin_popcount(patch[i]);
+        valid = entry.rawBytes == maskBytes + replacements * 2 &&
+                (!(pixelCount % 8) || !(patch[maskBytes - 1] >> (pixelCount % 8)));
+    }
+    if (valid) {
+        const uint8_t* color = patch + maskBytes;
+        uint32_t bit = 0;
+        for (unsigned y = 0; y < header.height; ++y) {
+            auto* row = roomPixels + (header.y + y) * artWidth_ + header.x;
+            for (unsigned x = 0; x < header.width; ++x, ++bit) {
+                if (patch[bit / 8] & (1u << (bit % 8))) {
+                    row[x] = uint16_t(color[0]) | uint16_t(color[1] << 8);
+                    color += 2;
+                }
+            }
+        }
+    }
+    Platform::memory().release(patch);
+    return valid;
+}
+
 bool RoomResource::begin() {
     if (initialized_) return loaded_;
     initialized_ = true;

@@ -11,6 +11,7 @@
 #include "game/FriendshipPity.h"
 #include "game/MarketSchedule.h"
 #include "game/MarketSupply.h"
+#include "game/MarketWorkshopService.h"
 #include "game/Species.h"
 #include "platform/api/PlatformServices.h"
 
@@ -175,6 +176,15 @@ struct SaveRecordV10 {
 static_assert(offsetof(Game::GameState, friendshipPity) == 2528,
               "raw v10 state prefix changed");
 static_assert(sizeof(SaveRecordV10) == 2632, "raw v10 envelope changed");
+
+struct SaveRecordV11 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint8_t stateBytes[2540];
+    MainSceneViewRecord view;
+};
+static_assert(sizeof(SaveRecordV11) == 2644, "raw v11 envelope changed");
 
 struct SaveRecordHeader {
     uint32_t magic;
@@ -474,7 +484,10 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
 
     state = Game::GameState{};
     memcpy(&state, stateBytes, stateSize);
-    state.friendshipPity = FriendshipPity::migrateLegacy(state.legacyFriendshipPity);
+    if (version <= 10) {
+        state.friendshipPity = FriendshipPity::migrateLegacy(state.legacyFriendshipPity);
+    }
+    Game::MarketWorkshop::migrateLegacyWallpaper(state);
     std::memset(state.legacyFriendshipPity, 0, sizeof(state.legacyFriendshipPity));
     state.settings.reservedAudioSetting = 0;
     // Legacy v1/v2 records did not define gender. Use the requested stable
@@ -1156,6 +1169,14 @@ bool SaveManager::load(Game::GameState& state,
     } else if (header.version == 10 && len == sizeof(SaveRecordV10)) {
         const auto* record = reinterpret_cast<const SaveRecordV10*>(raw);
         loaded = loadLegacyGameState(record->stateBytes, 10, state, sizeof(record->stateBytes));
+        if (loaded) {
+            viewValid = mainSceneViewRecordValid(record->view);
+            if (viewValid) loadMainSceneViewRecord(record->view, viewState);
+            migrated = true;
+        }
+    } else if (header.version == 11 && len == sizeof(SaveRecordV11)) {
+        const auto* record = reinterpret_cast<const SaveRecordV11*>(raw);
+        loaded = loadLegacyGameState(record->stateBytes, 11, state, sizeof(record->stateBytes));
         if (loaded) {
             viewValid = mainSceneViewRecordValid(record->view);
             if (viewValid) loadMainSceneViewRecord(record->view, viewState);

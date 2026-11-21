@@ -26,7 +26,7 @@ float hatchCameraY(const HatchLayout& layout) {
 }
 
 void drawRoom(const HatchFrame& frame, const HatchLayout& layout) {
-    RoomRenderer::draw(hatchCameraY(layout), frame.night, hatchCameraX(layout));
+    RoomRenderer::draw(hatchCameraY(layout), frame.night, hatchCameraX(layout), 0, frame.wallpaper);
 }
 
 void drawEgg(const HatchLayout& layout, int8_t eggOffset) {

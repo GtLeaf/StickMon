@@ -3,6 +3,7 @@
 #include "core/MathUtil.h"
 #include "core/DeflateDecoder.h"
 #include "core/RoomResource.h"
+#include "game/MarketWorkshopService.h"
 #include "hardware/Hal.h"
 #include "platform/api/PlatformServices.h"
 #include "presentation/PixelRenderer.h"
@@ -21,6 +22,8 @@ bool roomBufferValid = false;
 bool roomBufferNight = false;
 uint32_t roomBufferRevision = 0;
 uint16_t roomBufferFurniture = 0;
+Wallpaper roomBufferWallpaper = Wallpaper::ORIGINAL;
+bool roomBufferWallpaperApplied = false;
 
 bool ensureRoomBuffer() {
     RoomResource& room = RoomResource::ins();
@@ -90,25 +93,29 @@ void applyNightPatch() {
     }
 }
 
-bool prepare(bool night,uint16_t placedFurniture) {
-    placedFurniture &= 1u;
+bool prepare(bool night, uint16_t placedFurniture, Wallpaper wallpaper) {
+    placedFurniture &= Game::MarketWorkshop::PHOTO_FRAME;
     if (!ensureRoomBuffer()) return false;
-    if (roomBufferValid && roomBufferNight == night &&
-        roomBufferRevision == RoomResource::ins().revision()&&roomBufferFurniture==placedFurniture) return true;
+    RoomResource& room = RoomResource::ins();
+    if (roomBufferValid && roomBufferNight == night && roomBufferRevision == room.revision() &&
+        roomBufferFurniture == placedFurniture && roomBufferWallpaper == wallpaper) return true;
     uint32_t started = Platform::clock().millis();
     if (!decodeBase()) {
         Platform::errorLine("[RoomRenderer] base decode failed");
         roomBufferValid = false;
         return false;
     }
-    RoomResource& room = RoomResource::ins();
+    if (night && room.layered() && room.furniture().nightBaseLength() &&
+        !inflateRawDeflate(room.furniture().nightBase(), room.furniture().nightBaseLength(),
+            reinterpret_cast<uint8_t*>(roomBuffer), room.baseRawBytes())) {
+        roomBufferValid = false;
+        return false;
+    }
+    if (night && !room.layered()) applyNightPatch();
+    // Home can still draw the original surface if an overlay is unavailable.
+    // The shop consults this result before showing a preview or charging coins.
+    roomBufferWallpaperApplied = room.applyWallpaper(roomBuffer, night, wallpaper);
     if (room.layered()) {
-        if (night && room.furniture().nightBaseLength() &&
-            !inflateRawDeflate(room.furniture().nightBase(), room.furniture().nightBaseLength(),
-                reinterpret_cast<uint8_t*>(roomBuffer), room.baseRawBytes())) {
-            roomBufferValid = false;
-            return false;
-        }
         auto* rgb = static_cast<uint8_t*>(Platform::memory().allocate(roomBufferPixels * 3, true));
         if (!rgb) { roomBufferValid = false; return false; }
         for (uint32_t i = 0; i < roomBufferPixels; ++i) {
@@ -122,8 +129,8 @@ bool prepare(bool night,uint16_t placedFurniture) {
             roomBuffer[i] = ((rgb[i * 3] & 0xf8) << 8) |
                            ((rgb[i * 3 + 1] & 0xfc) << 3) | (rgb[i * 3 + 2] >> 3);
         Platform::memory().release(rgb);
-    } else if (night) applyNightPatch();
-    if (placedFurniture & 1u) {
+    }
+    if (placedFurniture & Game::MarketWorkshop::PHOTO_FRAME) {
         const int scale = room.artScale();
         const int x = FurnitureArt::FRAME_WORLD_X * scale, y = FurnitureArt::frameTop(scale, scale);
         const int size = FurnitureArt::FRAME_WORLD_SIZE * scale;
@@ -145,7 +152,8 @@ bool prepare(bool night,uint16_t placedFurniture) {
             }
         }
     }
-    roomBufferFurniture=placedFurniture;
+    roomBufferFurniture = placedFurniture;
+    roomBufferWallpaper = wallpaper;
     roomBufferNight = night;
     roomBufferRevision = RoomResource::ins().revision();
     roomBufferValid = true;
@@ -260,9 +268,9 @@ int16_t screenY(float worldY, float cameraY) {
     return viewport().y + static_cast<int16_t>(roundf((worldY - clampCameraY(cameraY)) * PIXEL_SCALE));
 }
 
-bool draw(float cameraY, bool night, float cameraX,uint16_t placedFurniture) {
+bool draw(float cameraY, bool night, float cameraX, uint16_t placedFurniture, Wallpaper wallpaper) {
     RoomResource::ins().begin();
-    if (!prepare(night,placedFurniture)) {
+    if (!prepare(night, placedFurniture, wallpaper)) {
         PixelRenderer::clear(PixelRenderer::rgb(16, 18, 24));
         return false;
     }
@@ -275,26 +283,53 @@ bool draw(float cameraY, bool night, float cameraX,uint16_t placedFurniture) {
 bool drawViewport(int16_t destinationX, int16_t destinationY,
                   uint16_t viewportWidth, uint16_t viewportHeight,
                   int16_t cameraX, int16_t cameraY, bool night,
-                  uint8_t pixelScale,uint16_t placedFurniture) {
+                  uint8_t pixelScale, uint16_t placedFurniture, Wallpaper wallpaper) {
     RoomResource::ins().begin();
-    if (!prepare(night,placedFurniture)) return false;
+    if (!prepare(night, placedFurniture, wallpaper)) return false;
     return drawViewportBuffer(destinationX, destinationY,
                               viewportWidth, viewportHeight,
                               cameraX, cameraY, pixelScale);
 }
 
-bool drawPreview(int16_t x,int16_t y,uint16_t width,uint16_t height,bool night,uint16_t placedFurniture){
+bool preparePreview(bool night, uint16_t placedFurniture, Wallpaper wallpaper) {
     RoomResource::ins().begin();
-    if(!width||!height||width>480||!prepare(night,placedFurniture))return false;
-    auto& room=RoomResource::ins();auto& c=PixelRenderer::canvas();
-    const int drawWidth=std::min<int>(width,int(height)*room.artWidth()/room.artHeight());
-    const int drawHeight=drawWidth*room.artHeight()/room.artWidth();
-    const int left=x+(width-drawWidth)/2,top=y+(height-drawHeight)/2;
+    return prepare(night, placedFurniture, wallpaper) && roomBufferWallpaperApplied;
+}
+
+bool drawPreview(int16_t x, int16_t y, uint16_t width, uint16_t height, bool night,
+                 uint16_t placedFurniture, const uint16_t* wallPhoto, Wallpaper wallpaper) {
+    if (!width || !height || width > 480 || !preparePreview(night, placedFurniture, wallpaper)) return false;
+    const auto& room = RoomResource::ins();
+    auto& canvas = PixelRenderer::canvas();
+    const int drawWidth = std::min<int>(width, int(height) * room.artWidth() / room.artHeight());
+    const int drawHeight = drawWidth * room.artHeight() / room.artWidth();
+    const int left = x + (width - drawWidth) / 2, top = y + (height - drawHeight) / 2;
+    const int scale = room.artScale();
+    constexpr int photoSize = FurnitureArt::WALL_PHOTO_SIZE;
+    constexpr int inset = (FurnitureArt::FRAME_WORLD_SIZE - photoSize) / 2;
+    const int frameX = FurnitureArt::FRAME_WORLD_X * scale;
+    const int photoX = frameX + inset * scale;
+    const int photoY = FurnitureArt::frameTop(scale, scale) + inset * scale;
+    // Only sample the photo within its projected columns. The shared room cache
+    // keeps the empty frame so changing a binding never requires a room decode.
+    const int firstPhotoCol = (photoX * drawWidth + room.artWidth() - 1) / room.artWidth();
+    const int endPhotoCol = std::min(drawWidth,
+        ((photoX + photoSize * scale) * drawWidth + room.artWidth() - 1) / room.artWidth());
     uint16_t row[480];
-    for(int dy=0;dy<drawHeight;++dy){
-        const int sy=dy*room.artHeight()/drawHeight;
-        for(int dx=0;dx<drawWidth;++dx)row[dx]=roomBuffer[sy*room.artWidth()+dx*room.artWidth()/drawWidth];
-        c.pushImage(left,top+dy,drawWidth,1,row);
+    for (int dy = std::max(0, canvas.clipTop() - top);
+         dy < std::min(drawHeight, canvas.clipBottom() - top); ++dy) {
+        const int sy = dy * room.artHeight() / drawHeight;
+        const uint16_t* source = roomBuffer + sy * room.artWidth();
+        for (int dx = 0; dx < drawWidth; ++dx) row[dx] = source[dx * room.artWidth() / drawWidth];
+        if (wallPhoto && (placedFurniture & Game::MarketWorkshop::PHOTO_FRAME)) {
+            for (int dx = firstPhotoCol; dx < endPhotoCol; ++dx) {
+                const int sx = dx * room.artWidth() / drawWidth;
+                const int photoRow = sy - photoY - (sx - frameX) / 3;
+                if (photoRow >= 0 && photoRow < photoSize * scale)
+                    row[dx] = wallPhoto[photoRow / scale * photoSize + (sx - photoX) / scale];
+            }
+        }
+        canvas.pushImage(left, top + dy, drawWidth, 1, row);
     }
     return true;
 }

@@ -4,6 +4,7 @@
 #include "core/BuildConfig.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
+#include "game/WallpaperCatalog.h"
 
 namespace Ui {
 
@@ -37,6 +38,7 @@ struct HomeHudRow {
 // Read-only presentation data. World coordinates retain their save semantics.
 struct HomeFrame {
     uint16_t placedFurniture = 0;
+    Game::MarketWorkshop::Wallpaper wallpaper = Game::MarketWorkshop::Wallpaper::ORIGINAL;
     uint32_t nowMs = 0;
     bool night = false;
     HomeActorVisual main, visitor;

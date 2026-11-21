@@ -13,7 +13,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 11;
+static constexpr uint16_t SAVE_VERSION = 12;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 // debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
 // release 固件忽略这些位但必须原样保留。
@@ -457,7 +457,10 @@ struct GameState {
         uint8_t reserved = 0;
     } marketSupply;
     FriendshipPityState friendshipPity;
+    uint8_t wallpaperId = 0; // Stable catalog ID; zero is the original room.
 };
+static_assert(offsetof(GameState, wallpaperId) == 2540,
+              "v12 wallpaper ID must follow the frozen v11 layout");
 static_assert(offsetof(GameState, careRewardDay) == 1572,
               "v5 care fields must follow the frozen v4 layout");
 static_assert(offsetof(GameState, marketTutor) == 2368,
