@@ -4277,7 +4277,7 @@
       "id": 225,
       "identifier": "delibird",
       "evolvesFromId": 0,
-      "basicMoveId": 217,
+      "basicMoveId": 420,
       "learnset": [
         {
           "level": 1,
@@ -5019,7 +5019,7 @@
       "id": 273,
       "identifier": "seedot",
       "evolvesFromId": 0,
-      "basicMoveId": 153,
+      "basicMoveId": 106,
       "learnset": [
         {
           "level": 3,

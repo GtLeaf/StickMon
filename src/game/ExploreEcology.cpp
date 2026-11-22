@@ -27,14 +27,6 @@ bool grass(uint16_t tile) {
     return (tile >= 385 && tile <= 390) || tile == 399 || tile == 415 ||
            ExploreMistForestData::flag(tile,64);
 }
-bool waterOnly(uint16_t species) {
-    // Explicit fish family in the current roster; Water typing alone is not enough.
-    #if STICKMON_EXTERNAL_CONTENT
-    const auto* p=profile(species);return p && p->waterOnly;
-#else
-    return species == 129 || species == 130;
-#endif
-}
 Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
     const uint16_t base = map.layers[0][cell];
     const uint16_t overlay = map.layers[1][cell];
@@ -53,6 +45,16 @@ Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
          ExploreMapGenerator::isSmoothIceTile(base))) return Surface::ICE;
     return Surface::NONE;
 }
+}
+
+bool waterOnlySpecies(uint16_t speciesId) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* entry = profile(speciesId);
+    return entry && entry->waterOnly;
+#else
+    return speciesId == 129 || speciesId == 130 ||
+           speciesId == 339 || speciesId == 340;
+#endif
 }
 
 Temperament temperamentForSpecies(uint16_t speciesId) {
@@ -107,7 +109,7 @@ Surface Simulation::surfaceAt(int x, int y) const {
 bool Simulation::canOccupy(uint16_t speciesId, int x, int y) const {
     const Surface surface = surfaceAt(x, y);
     if (surface == Surface::NONE) return false;
-    return surface == Surface::WATER ? waterOnly(speciesId) : !waterOnly(speciesId);
+    return (surface == Surface::WATER) == waterOnlySpecies(speciesId);
 }
 
 bool Simulation::canStand(uint16_t speciesId, float x, float y) const {
@@ -294,6 +296,7 @@ void Simulation::appendActor(uint16_t species, uint8_t cell, bool hidden, uint32
         canFlyAt(actor.pose.x, actor.pose.y)) beginWideFlight(count_ - 1);
     else if (!actor.pose.hidden && locomotionForSpecies(actor.pose.speciesId) == Locomotion::FLAP)
         cruise(count_ - 1);
+    updateAnimation(count_ - 1, lastUpdateMs_, true, true);
 }
 
 Cover Simulation::coverAt(float x, float y) const {
@@ -648,21 +651,36 @@ void Simulation::advance(uint8_t index, uint32_t dt, float playerX, float player
     rest(index, false);
 }
 
+void Simulation::updateAnimation(uint8_t index, uint32_t nowMs, bool active, bool applyFrame) {
+    auto& actor = actors_[index];
+    if (!PokemonAnimationTiming::hasTiming(actor.pose.speciesId)) return;
+    const uint8_t frame = actor.animationClock.update(actor.pose.speciesId,
+        animationAction(actor.pose), nowMs, active && !actor.pose.hidden && !actor.pose.absent);
+    // Keep cover effects and legacy lift calculations on their original clocks.
+    // Only replace the artwork frame after the behavior update has completed.
+    if (applyFrame && !actor.pose.hidden && !actor.pose.absent) actor.pose.animationFrame = frame;
+}
+
 void Simulation::update(uint32_t nowMs, bool active, float playerX, float playerY,
                          View view) {
     const uint32_t dt = std::min<uint32_t>(nowMs - lastUpdateMs_, 250);
     lastUpdateMs_ = nowMs;
-    if (!active) return;
+    if (!active) {
+        for (uint8_t i = 0; i < count_; ++i) updateAnimation(i, nowMs, false, false);
+        return;
+    }
     if (group_.active) {
         group_.pendingMs += dt;
         bool visible = false;
         for (uint8_t i = 0; i < count_; ++i)
             visible |= view.contains(actors_[i].pose.x, actors_[i].pose.y);
-        if (group_.pendingMs >= (visible ? 100U : 500U)) {
+        const bool advanced = group_.pendingMs >= (visible ? 100U : 500U);
+        if (advanced) {
             const uint32_t elapsed = group_.pendingMs;
             group_.pendingMs = 0;
             advanceGroup(elapsed, playerX, playerY, visible);
         }
+        for (uint8_t i = 0; i < count_; ++i) updateAnimation(i, nowMs, true, advanced);
         return;
     }
     for (uint8_t i = 0; i < count_; ++i) {
@@ -670,10 +688,14 @@ void Simulation::update(uint32_t nowMs, bool active, float playerX, float player
         actor.pendingMs += dt;
         const uint32_t interval = view.contains(actor.pose.x, actor.pose.y,
             wideFlightSpecies(actor.pose.speciesId) ? 96 : 30) ? 100 : 500;
-        if (actor.pendingMs < interval) continue;
+        if (actor.pendingMs < interval) {
+            updateAnimation(i, nowMs, true, false);
+            continue;
+        }
         const uint32_t elapsed = actor.pendingMs;
         actor.pendingMs = 0;
         advance(i, elapsed, playerX, playerY, view.contains(actor.pose.x, actor.pose.y, 0));
+        updateAnimation(i, nowMs, true, true);
     }
 }
 

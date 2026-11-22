@@ -15,6 +15,7 @@
 #include "game/ExploreTileSemantics.h"
 #include "platform/api/PlatformServices.h"
 #include "presentation/ExploreRouteMotion.h"
+#include "presentation/PokemonAnimationView.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/PokemonShadow.h"
 
@@ -573,10 +574,10 @@ void drawRouteBoss(const ExploreRouteFrame& view, int cameraX, int cameraY, cons
     const PokemonSprites::SpriteFrame* frame = nullptr;
     bool flipX = false;
     PokemonSprites::WalkingAnimation animation{};
-    if (PokemonSprites::walkingAnimation(
+    if (PokemonAnimationView::animationFor(
             species->id,
             static_cast<PokemonSprites::WalkDirection>(walkDirection),
-            animation)) {
+            patrolMoving, animation)) {
         uint8_t frameIndex = 0;
         if (patrolMoving) {
             uint32_t moveStarted = movingOut ? ROUTE_BOSS_PATROL_OUT_START_MS
@@ -589,6 +590,16 @@ void drawRouteBoss(const ExploreRouteFrame& view, int cameraX, int cameraY, cons
             frameIndex = PokemonMotion::movementFrame(
                 PokemonMotion::behaviorForSpecies(species->id),
                 animation.frameCount, moveElapsed, moveElapsed, moveDuration);
+            frameIndex = PokemonAnimationTiming::frameAt(species->id,
+                PokemonAnimationTiming::Action::Walk, moveElapsed, frameIndex);
+        } else {
+            const uint32_t idleElapsed = patrolPhase >= ROUTE_BOSS_PATROL_RETURN_END_MS
+                ? patrolPhase - ROUTE_BOSS_PATROL_RETURN_END_MS
+                : patrolPhase >= ROUTE_BOSS_PATROL_OUT_END_MS
+                    ? patrolPhase - ROUTE_BOSS_PATROL_OUT_END_MS
+                    : patrolPhase + ROUTE_BOSS_PATROL_CYCLE_MS - ROUTE_BOSS_PATROL_RETURN_END_MS;
+            frameIndex = PokemonAnimationTiming::frameAt(species->id,
+                PokemonAnimationTiming::Action::Idle, idleElapsed);
         }
         frame = PokemonSprites::findSpeciesSprite(
             species->id,
@@ -693,7 +704,8 @@ void drawRouteMonster(const ExploreRouteFrame& view, ExploreRouteVisualState& vi
         }
     }
 
-    if (motion.mode != PokemonMotion::Mode::SLITHER || !animationActive) {
+    const bool originalTiming = PokemonAnimationTiming::hasTiming(species.id);
+    if (originalTiming || motion.mode != PokemonMotion::Mode::SLITHER || !animationActive) {
         *visualWalkDirection = walkDirection;
     } else {
         uint16_t cycleMs = PokemonMotion::cycleDurationMs(
@@ -705,13 +717,21 @@ void drawRouteMonster(const ExploreRouteFrame& view, ExploreRouteVisualState& vi
         }
     }
 
+    const uint8_t partyIndex = follower ? 1 : 0;
+    const bool clockActive = visual.partyAnimationActive && !view.exploreMenuOpen;
+    if (clockActive) visual.partyAction[partyIndex] = animationActive
+        ? PokemonAnimationTiming::Action::Walk : PokemonAnimationTiming::Action::Idle;
+    const uint8_t timedFrame = visual.partyAnimation[partyIndex].update(species.id,
+        visual.partyAction[partyIndex], view.nowMs, clockActive);
+    const bool artworkWalking = originalTiming
+        ? visual.partyAction[partyIndex] == PokemonAnimationTiming::Action::Walk : animationActive;
     PokemonSprites::WalkingAnimation animation{};
-    if (PokemonSprites::walkingAnimation(
+    if (PokemonAnimationView::animationFor(
             species.id,
             static_cast<PokemonSprites::WalkDirection>(*visualWalkDirection),
-            animation)) {
+            artworkWalking, animation)) {
         uint8_t frameIndex = 0;
-        if (animationActive) {
+        if (animationActive && !originalTiming) {
             if (motion.mode == PokemonMotion::Mode::SLITHER) {
                 uint8_t registrationDirection = 0;
                 switch (static_cast<PokemonSprites::WalkDirection>(
@@ -747,6 +767,7 @@ void drawRouteMonster(const ExploreRouteFrame& view, ExploreRouteVisualState& vi
                     stepElapsedMs, stepDurationMs);
             }
         }
+        if (originalTiming) frameIndex = timedFrame;
         marker = PokemonSprites::findSpeciesSprite(
             species.id,
             static_cast<PokemonSprites::SpriteKind>(

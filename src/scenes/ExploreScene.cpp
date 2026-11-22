@@ -18,6 +18,7 @@
 #include <cmath>
 #include "assets/GameAssets.h"
 #include "assets/PokemonMotion.h"
+#include "game/PokemonAnimationTiming.h"
 #include "assets/PokemonSprites.h"
 #include "core/AudioManager.h"
 #include "core/GameEngine.h"
@@ -375,7 +376,8 @@ uint16_t routeStepDurationForSpecies(uint16_t speciesId) {
         frameCount = animation.frameCount;
     }
     return PokemonMotion::routeStepDurationMs(
-        PokemonMotion::behaviorForSpecies(speciesId), frameCount);
+        PokemonMotion::behaviorForSpecies(speciesId),
+        PokemonAnimationTiming::stepTimingFrameCount(speciesId, frameCount));
 }
 
 static_assert(routeFollowerTargetIndex(0) == 0 &&

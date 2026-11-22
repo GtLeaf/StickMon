@@ -15,14 +15,17 @@ using Rarity = ExplorePool::Rarity;
 // The species tier is shared by all regions. Species without a tier use NORMAL.
 constexpr Rarity rarityForSpecies(uint16_t speciesId) {
     switch (speciesId) {
-    case 10: case 12: case 161: case 194: case 195: case 285:
-    case 361:
+    case 10: case 12: case 161: case 194: case 195: case 220:
+    case 263: case 265: case 270: case 273: case 285: case 361:
         return Rarity::COMMON;
     case 17: case 18: case 26: case 41: case 92: case 172:
-    case 184: case 279: case 280: case 282: case 322: case 362:
+    case 184: case 215: case 221: case 225: case 238: case 264:
+    case 267: case 269: case 272: case 279: case 280: case 282:
+    case 299: case 322: case 340: case 342: case 356: case 362:
         return Rarity::UNCOMMON;
-    case 123: case 130: case 133: case 134: case 135: case 136:
-    case 147: case 148: case 149: case 196: case 197: case 281:
+    case 123: case 124: case 130: case 133: case 134: case 135:
+    case 136: case 147: case 148: case 149: case 196: case 197:
+    case 214: case 275: case 281: case 302: case 359:
         return Rarity::RARE;
     case 25:
         return Rarity::VERY_RARE;
@@ -100,6 +103,14 @@ static constexpr Entry GRASS_PATH[] = {
     {133, 3, 9},
     {1, 3, 9},
     {4, 3, 9},
+    {263, 2, 9},
+    {265, 1, 6},
+    {273, 3, 9},
+    {270, 3, 9},
+    {285, 4, 9},
+    {298, 4, 9},
+    {266, 7, 9},
+    {268, 7, 9},
 };
 #endif
 
@@ -123,6 +134,13 @@ static constexpr Entry CREEK_SLOPE[] = {
     {147, 10, 17},
     {7, 7, 15},
     {5, 16, 17},
+    {263, 7, 17},
+    {270, 7, 13},
+    {271, 14, 17},
+    {339, 9, 17, ExploreHabitat::OPEN_WATER},
+    {341, 9, 17, ExploreHabitat::OPEN_WATER},
+    {267, 10, 17},
+    {269, 10, 17},
 };
 #endif
 
@@ -150,6 +168,11 @@ static constexpr Entry TALL_GRASS_PARK[] = {
     {2, 17, 27},
     {147, 17, 27},
     {8, 17, 27},
+    {263, 17, 19},
+    {264, 20, 27},
+    {267, 17, 27},
+    {269, 17, 27},
+    {274, 17, 27},
 };
 #endif
 
@@ -171,6 +194,17 @@ static constexpr Entry FROST_CRYSTAL_CAVE[] = {
     {17, 28, 35},
     {281, 28, 29},
     {9, 36, 41},
+    {220, 28, 32},
+    {221, 33, 42},
+    {215, 31, 42},
+    {225, 29, 39},
+    {238, 28, 29},
+    {124, 30, 42},
+    {299, 29, 42, ExploreHabitat::CAVE},
+    {302, 34, 42, ExploreHabitat::CAVE},
+    {355, 29, 36},
+    {356, 37, 42},
+    {359, 37, 42},
 };
 #endif
 
@@ -192,6 +226,17 @@ static constexpr Entry MIST_FOREST_PATH[] = {
     {197, 41, 53},
     {148, 41, 49},
     {3, 41, 53},
+    {214, 43, 53},
+    {275, 47, 53},
+    {356, 41, 53},
+    {359, 45, 53},
+    {123, 41, 50},
+    {264, 41, 49},
+    {267, 41, 51},
+    {269, 41, 51},
+    {274, 41, 47},
+    {272, 42, 53},
+    {215, 41, 47},
 };
 #endif
 
@@ -214,6 +259,16 @@ static constexpr Entry ANCIENT_WATERFALL_VALLEY[] = {
     {6, 53, 67},
     {9, 53, 67},
     {3, 53, 67},
+    {299, 53, 64, ExploreHabitat::CAVE},
+    {302, 55, 67, ExploreHabitat::CAVE},
+    {340, 53, 67, ExploreHabitat::OPEN_WATER},
+    {342, 53, 67, ExploreHabitat::OPEN_WATER},
+    {272, 53, 63},
+    {214, 53, 61},
+    {359, 57, 67},
+    {356, 55, 67},
+    {275, 53, 64},
+    {123, 53, 63},
 };
 #endif
 
@@ -234,6 +289,7 @@ struct Table {
 
 template <size_t N>
 constexpr Table table(const Entry (&entries)[N]) {
+    static_assert(N <= ExplorePool::MAX_SOURCE_ENTRIES, "explore encounter table capacity");
     return {entries, static_cast<uint8_t>(N)};
 }
 

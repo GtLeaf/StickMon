@@ -25,6 +25,8 @@ PACK_HEADER = struct.Struct("<IHHHHHH")
 PACK_HEADER_V2 = struct.Struct("<IHHHHHHIII")
 PACK_FRAME = struct.Struct("<HBBBBHIII")
 PACK_FRAME_V3 = struct.Struct("<HBBBBHIIIBBBB")
+PACK_STEP_V5 = struct.Struct('<HHBBBBhhBBBB')
+PACK_POSE_V5 = struct.Struct('<BBBBIII')
 
 
 def png_data_url(path: Path) -> str:
@@ -130,20 +132,38 @@ def load_sprite_pack(path: Path, kind_names: list[str]) -> tuple[int, list[dict]
     if len(payload) < PACK_HEADER.size:
         raise RuntimeError(f"truncated sprite pack: {path}")
     magic, version, species_id, frame_count, rle_words, palette_words, _ = PACK_HEADER.unpack_from(payload)
-    if magic != PACK_MAGIC or version not in (1, 2, 3):
+    if magic != PACK_MAGIC or version not in (1, 2, 3, 4, 5):
         raise RuntimeError(f"invalid sprite pack header: {path}")
     header_size = PACK_HEADER.size
-    frame_struct = PACK_FRAME_V3 if version == 3 else PACK_FRAME
+    pose_count = 0
+    frame_struct = PACK_FRAME_V3 if version >= 3 else PACK_FRAME
     if version >= 2:
         if len(payload) < PACK_HEADER_V2.size:
             raise RuntimeError(f"truncated sprite pack: {path}")
         *_, flags, raw_size, compressed_size, checksum = PACK_HEADER_V2.unpack_from(payload)
-        expected = frame_count * frame_struct.size + (rle_words + palette_words) * 2
-        if flags != 1 or raw_size != expected or compressed_size != len(payload) - PACK_HEADER_V2.size:
+        compressed_start = PACK_HEADER_V2.size
+        if version in (4, 5):
+            if len(payload) < compressed_start + 2:
+                raise RuntimeError(f'truncated extended sprite header: {path}')
+            high, = struct.unpack_from('<H', payload, compressed_start)
+            if version == 4 and not high:
+                raise RuntimeError(f'invalid extended word count: {path}')
+            rle_words |= high << 16
+            compressed_start += 2
+        if version == 5:
+            if len(payload) < compressed_start + 2:
+                raise RuntimeError(f'truncated pose sprite header: {path}')
+            pose_count, = struct.unpack_from('<H', payload, compressed_start)
+            compressed_start += 2
+            if not 0 < frame_count <= 256 or not 0 < pose_count <= 256:
+                raise RuntimeError(f'invalid sprite pose count: {path}')
+        expected = ((frame_count * PACK_STEP_V5.size + pose_count * PACK_POSE_V5.size)
+                    if version == 5 else frame_count * frame_struct.size) + (rle_words + palette_words) * 2
+        if flags != 1 or raw_size != expected or compressed_size != len(payload) - compressed_start:
             raise RuntimeError(f"sprite pack size or flags mismatch: {path}")
         decoder = zlib.decompressobj(-15)
         try:
-            raw = decoder.decompress(payload[PACK_HEADER_V2.size:], raw_size + 1)
+            raw = decoder.decompress(payload[compressed_start:], raw_size + 1)
         except zlib.error as exc:
             raise RuntimeError(f"invalid compressed sprite pack: {path}") from exc
         if (len(raw) != raw_size or not decoder.eof or decoder.unused_data
@@ -151,6 +171,10 @@ def load_sprite_pack(path: Path, kind_names: list[str]) -> tuple[int, list[dict]
             raise RuntimeError(f"sprite pack checksum or payload mismatch: {path}")
         payload = raw
         header_size = 0
+
+    if version == 5:
+        return load_pose_payload(path, payload, species_id, frame_count, pose_count,
+                                 rle_words, palette_words, kind_names)
 
     frame_table_end = header_size + frame_count * frame_struct.size
     data_end = frame_table_end + (rle_words + palette_words) * 2
@@ -178,7 +202,7 @@ def load_sprite_pack(path: Path, kind_names: list[str]) -> tuple[int, list[dict]
             "offset": data_offset,
             "length": length,
             "paletteOffset": palette_offset,
-            "shadow": list(record[9:]) if version == 3 else None,
+            "shadow": list(record[9:]) if version >= 3 else None,
             "groundOffsetY": height // 2 - padding if padding is not None else max(16, min(32, int(height * 0.42))),
         })
 
@@ -186,7 +210,44 @@ def load_sprite_pack(path: Path, kind_names: list[str]) -> tuple[int, list[dict]
     return species_id, frames, words[:rle_words], words[rle_words:rle_words + palette_words]
 
 
+def load_pose_payload(path, payload, species_id, frame_count, pose_count,
+                      rle_words, palette_words, kind_names):
+    poses_start = frame_count * PACK_STEP_V5.size
+    words_start = poses_start + pose_count * PACK_POSE_V5.size
+    poses = []
+    for index in range(pose_count):
+        width, height, fmt, palette_size, offset, length, palette_offset = PACK_POSE_V5.unpack_from(
+            payload, poses_start + index * PACK_POSE_V5.size)
+        if (not width or not height or fmt not in (0, 1) or not length
+                or offset + length > rle_words or palette_offset + palette_size > palette_words
+                or (fmt == 0 and palette_size != 0)
+                or (fmt == 1 and not 0 < palette_size <= 16)):
+            raise RuntimeError(f'invalid sprite pose: {path}')
+        poses.append(dict(imageWidth=width, imageHeight=height, format=fmt,
+                          paletteSize=palette_size, offset=offset, length=length,
+                          paletteOffset=palette_offset))
+    frames = []
+    for index in range(frame_count):
+        kind, pose_index, width, height, padding, flags, dx, dy, sx, sy, rx, ry = PACK_STEP_V5.unpack_from(
+            payload, index * PACK_STEP_V5.size)
+        if (pose_index >= pose_count or not width or not height or padding == 255
+                or flags & ~1 or dx < 0 or dy < 0):
+            raise RuntimeError(f'invalid sprite pose step: {path}')
+        pose = poses[pose_index]
+        if dx + pose['imageWidth'] > width or dy + pose['imageHeight'] > height:
+            raise RuntimeError(f'invalid sprite pose geometry: {path}')
+        frames.append(dict(pose, speciesId=species_id, kind=kind,
+                           kindName=kind_names[kind] if kind < len(kind_names) else f'KIND_{kind}',
+                           poseIndex=pose_index, width=width, height=height,
+                           groundOffsetY=height // 2 - padding, shadow=[sx, sy, rx, ry],
+                           imageOffsetX=dx, imageOffsetY=dy, imageFlipX=bool(flags & 1)))
+    words = words_from_bytes(payload[words_start:])
+    return species_id, frames, words[:rle_words], words[rle_words:]
+
+
 def decode_frame(frame: dict, rle: list[int], palettes: list[int]) -> Image.Image:
+    width = frame.get('imageWidth', frame['width'])
+    height = frame.get('imageHeight', frame['height'])
     if frame["format"] == 1:
         pixels = decode_indexed4_rle(
             rle,
@@ -195,19 +256,25 @@ def decode_frame(frame: dict, rle: list[int], palettes: list[int]) -> Image.Imag
             frame["length"],
             frame["paletteOffset"],
             frame["paletteSize"],
-            frame["width"],
-            frame["height"],
+            width,
+            height,
         )
     else:
         pixels = decode_rgb565_rle(
             rle,
             frame["offset"],
             frame["length"],
-            frame["width"],
-            frame["height"],
+            width,
+            height,
         )
-    image = Image.new("RGBA", (frame["width"], frame["height"]))
+    image = Image.new("RGBA", (width, height))
     image.putdata(pixels)
+    if 'imageWidth' in frame:
+        if frame['imageFlipX']:
+            image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        canvas = Image.new('RGBA', (frame['width'], frame['height']))
+        canvas.paste(image, (frame['imageOffsetX'], frame['imageOffsetY']))
+        return canvas
     return image
 
 

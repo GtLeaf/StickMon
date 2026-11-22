@@ -986,6 +986,8 @@ void AmoledApp::cancelExploreDeparture() {
 }
 
 void AmoledApp::applyExploreTransitionEffects(uint32_t nowMs) {
+    const uint8_t previousMainFrame = petFrame;
+    const uint8_t previousCompanionFrame = companionFrame;
     const auto effects = exploreTransition_.takeEffects();
     using Frame = ExploreTransitionFlow::Frame;
     const auto animate = [nowMs](const ExploreTransitionFlow::Visual& visual,
@@ -1016,6 +1018,7 @@ void AmoledApp::applyExploreTransitionEffects(uint32_t nowMs) {
     if (effects.scheduleMain) schedulePetDecision(nowMs);
     if (effects.schedulePair) schedulePairInteraction(nowMs, true);
     if (effects.camera) updateCamera();
+    updateHomeAnimationFrames(nowMs, previousMainFrame, previousCompanionFrame);
     if (effects.roomRender) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
     if (effects.fullRender) requestFullRender();
     if (effects.trace != ExploreTransitionFlow::Trace::NONE) {
@@ -3003,6 +3006,10 @@ void AmoledApp::update(uint32_t nowMs) {
     } else if (!displayLocked && !displayStandby_ && homePhotoFrame_.update(nowMs)) {
         requestFramePhotoRows();
     }
+    if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
+        (displayStandby_ && !lockedHomePowerAllowed())) {
+        updateHomeAnimationFrames(nowMs, petFrame, companionFrame, false);
+    }
     if(photoFlow_.active()){
         const auto scene = sceneFlow.current();
         const bool marketCamera = scene == AppSceneFlow::Scene::MARKET && market_ && photoFlow_.camera();
@@ -4405,6 +4412,9 @@ void AmoledApp::startSleepAnimation(uint32_t nowMs, uint16_t frameMs) {
 }
 
 void AmoledApp::updateSleepAnimation(uint32_t nowMs) {
+    // Source-timed sleep is sampled with the other actor actions after the
+    // home update, including its visibility/pause state.
+    if (PokemonAnimationTiming::hasTiming(gameState.team[0].speciesId)) return;
     const uint8_t frame = homePresenter_.sleepFrame(nowMs);
     if (frame == petFrame) return;
     petFrame = frame;
@@ -4412,6 +4422,56 @@ void AmoledApp::updateSleepAnimation(uint32_t nowMs) {
 }
 
 void AmoledApp::updatePet(uint32_t nowMs) {
+    const uint8_t previousMainFrame = petFrame;
+    const uint8_t previousCompanionFrame = companionFrame;
+    updatePetState(nowMs);
+    updateHomeAnimationFrames(nowMs, previousMainFrame, previousCompanionFrame);
+}
+
+void AmoledApp::updateHomeAnimationFrames(uint32_t nowMs,
+                                         uint8_t previousMainFrame,
+                                         uint8_t previousCompanionFrame,
+                                         bool active) {
+    using PokemonAnimationTiming::Action;
+    active = active && sceneFlow.current() == AppSceneFlow::Scene::HOME;
+    HomeViewModel mainModel;
+    fillHomePetModel(mainModel);
+    const bool companionWalking =
+        homeCompanionActor.task == Home::Task::WANDER ||
+        homeCompanionActor.task == Home::Task::SEEK_FOOD ||
+        homeCompanionActor.task == Home::Task::SEEK_SLEEP ||
+        homeCompanionActor.task == Home::Task::YIELDING ||
+        homeCompanionActor.task == Home::Task::DOOR_ACTION ||
+        (homeCompanionActor.task == Home::Task::PAIR_ACTION &&
+         !homeCompanionActor.route.empty());
+    for (uint8_t slot = 0; slot < 2; ++slot) {
+        const auto& monster = gameState.team[slot];
+        const auto& actor = slot == 0 ? homeMainActor : homeCompanionActor;
+        const bool sleeping = slot == 0 ? mainModel.petResting :
+            monster.fainted || monster.hpCur == 0 ||
+            monster.majorStatus == Game::MajorStatus::SLEEP ||
+            actor.task == Home::Task::SLEEPING || actor.task == Home::Task::FAINTED;
+        const bool walking = slot == 0
+            ? mainModel.petAction != HomeViewModel::PetVisualAction::IDLE
+            : companionWalking;
+        const Action action = sleeping ? Action::Sleep : walking ? Action::Walk : Action::Idle;
+        const bool visible = active && slot < gameState.teamCount && actor.active &&
+            !actor.hidden && !(slot == 0 ? exploreTransition_.state().mainHidden
+                                        : exploreTransition_.state().companionHidden);
+        const uint8_t frame = homePresenter_.animationFrame(
+            slot, monster.speciesId, action, nowMs, visible);
+        if (!visible || !PokemonAnimationTiming::hasTiming(monster.speciesId)) continue;
+        (slot == 0 ? petFrame : companionFrame) = frame;
+        const uint8_t previous = slot == 0 ? previousMainFrame : previousCompanionFrame;
+        // Moving actors already damage their old/new positions at the existing
+        // motion cadence. Stationary poses only damage rows when art changes.
+        if (action != Action::Walk && frame != previous) {
+            requestHomeActorRows(actor.y, actor.y);
+        }
+    }
+}
+
+void AmoledApp::updatePetState(uint32_t nowMs) {
     if (sceneFlow.current() != AppSceneFlow::Scene::HOME) {
         lastPetUpdateMs = nowMs;
         return;
@@ -4841,7 +4901,8 @@ void AmoledApp::updatePet(uint32_t nowMs) {
         return;
     }
 
-    if (petMotion() == PetMotion::IDLE) {
+    if (petMotion() == PetMotion::IDLE &&
+        !PokemonAnimationTiming::hasTiming(monster.speciesId)) {
         PokemonSprites::PetAnimationProfile profile{};
         if (PokemonSprites::petAnimationProfile(monster.speciesId, profile) &&
             static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
@@ -5873,7 +5934,8 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
             nextCompanionFrameMs = nowMs + HOME_SLEEP_FRAME_MS;
             requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
         }
-        if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+        if (!PokemonAnimationTiming::hasTiming(monster.speciesId) &&
+            static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
             ++companionFrame;
             nextCompanionFrameMs = nowMs + HOME_SLEEP_FRAME_MS;
             requestHomeActorRows(homeCompanionActor.y, homeCompanionActor.y);
@@ -5930,7 +5992,8 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
         if (homeSleepFlow_.wake(1, sleepIntent, nowMs)) {
             companionFrame = 0;
             nextCompanionFrameMs = nowMs + 520;
-        } else if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+        } else if (!PokemonAnimationTiming::hasTiming(monster.speciesId) &&
+                   static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
             ++companionFrame;
             nextCompanionFrameMs = nowMs + HOME_SLEEP_FRAME_MS;
             requestHomeActorRows(
@@ -6020,7 +6083,8 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
         return;
     }
 
-    if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+    if (!PokemonAnimationTiming::hasTiming(monster.speciesId) &&
+        static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
         const uint8_t frameCount = std::max<uint8_t>(
             1, animation.idleFrames);
         companionFrame = static_cast<uint8_t>(

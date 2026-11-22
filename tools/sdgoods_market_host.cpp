@@ -23,6 +23,7 @@
 #include "game/MarketShopService.h"
 #include "game/MarketTransaction.h"
 #include "ui/SceneSurface.h"
+#include "ui/common/MarketView.h"
 #include "presentation/PixelRenderer.h"
 #if __has_include("ui/round_touch/MarketShopUi.h")
 #include "ui/round_touch/MarketShopUi.h"
@@ -247,6 +248,26 @@ int main(int argc,char**argv){
     assert(validateContentCatalog() && catalog.healthy());
 #endif
     auto& engine=GameEngine::ins();assert(engine.begin());
+    {
+        using PokemonSprites::SpriteKind;
+        const uint16_t delibird=225;
+        assert(PokemonSprites::preloadDynamicSpecies(&delibird,1));
+        Market::Session market;
+        Market::Pose pose;
+        pose.species=delibird;
+        pose.direction=3;
+        pose.x=180;
+        pose.y=180;
+        pose.moving=true;
+        const Ui::MarketView::Viewport view{360,360,1,true,true};
+        Ui::MarketView::detail::ActorDraw actor;
+        pose.npc=true;
+        assert(Ui::MarketView::detail::prepareActor(market,view,150,0,0,pose,actor));
+        assert(actor.sprite->kind==uint16_t(SpriteKind::DELIBIRD_WALKING_LEFT_1) && actor.flip);
+        pose.npc=false;
+        assert(Ui::MarketView::detail::prepareActor(market,view,150,0,0,pose,actor));
+        assert(actor.sprite->kind==uint16_t(SpriteKind::DELIBIRD_PET_WALKING_RIGHT_1) && !actor.flip);
+    }
     auto& state=engine.gameState();state.oobeDone=true;state.coins=10000;state.teamCount=1;state.team[0]=Game::MonsterFactory::create(25,25);state.team[0].satiety=100;state.settings.idleTimeoutIndex=4;
 #if HAS_ROUND_MARKET
     if(std::string(argv[3])=="market-lock") {

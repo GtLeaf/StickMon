@@ -53,6 +53,93 @@ def configured_explore_species():
 
 
 class GeneratePokemonSpritesTests(unittest.TestCase):
+    def test_large_original_sprite_pack_preserves_32_bit_word_offsets(self):
+        from room_editor.generate_sprite_previews import load_sprite_pack, decode_frame
+        writer = generator.AssetWriter()
+        image = Image.new('RGBA', (4, 4), (255, 255, 255, 255))
+        writer.add_frame(381, 'LATIOS', 'FRONT', image)
+        encoded = writer.data[:]
+        writer.data = [0x8001] * 65536 + encoded
+        writer.frames[0]['offset'] = 65536
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '381.smonsp'
+            generator.write_species_pack(path, 381, writer, {'FRONT': 0})
+            self.assertEqual(4, struct.unpack_from('<H', path.read_bytes(), 4)[0])
+            _, frames, words, palettes = load_sprite_pack(path, ['FRONT'])
+            self.assertEqual(65536, frames[0]['offset'])
+            self.assertEqual(image.tobytes(), decode_frame(frames[0], words, palettes).tobytes())
+
+    def test_magikarp_glalie_original_motion_is_packed(self):
+        from room_editor.generate_sprite_previews import decode_frame, load_sprite_pack, rgb565_to_rgba
+        self.assertTrue({129, 362} <= set(generator.RETIMED_BY_ID))
+        for species, counts in ((129, (4, 7, 2)), (362, (8, 8, 2))):
+            spec = generator.RETIMED_BY_ID[species]
+            self.assertEqual(counts, (spec.idle_frames, spec.walking_frames, spec.sleeping_frames))
+            _, packed, data, palettes = load_sprite_pack(
+                generator.PACK_SPRITE_OUT / f'{species:03d}.smonsp', generator.sprite_kind_names())
+            frames = {f['kindName']: f for f in packed}
+            for (action, direction, index), original, shadow in generator.expansion.registered_frames(species):
+                suffix = str(index) if action == 'sleeping' else f'{direction.upper()}_{index}'
+                name = f'{spec.ident}_{action.upper()}_{suffix}'
+                self.assertIn(name, frames)
+                self.assertEqual(original.size, (frames[name]['width'], frames[name]['height']))
+                self.assertEqual(list(shadow), frames[name]['shadow'])
+                actual = decode_frame(frames[name], data, palettes)
+                self.assertEqual(original.getbbox(), actual.getbbox())
+                expected = [rgb565_to_rgba(generator.rgb565(r, g, b)) if a > 16 else (0, 0, 0, 0)
+                            for r, g, b, a in original.getdata()]
+                self.assertEqual(expected, list(actual.getdata()), name)
+
+    def test_legacy_single_idle_species_have_complete_original_actions(self):
+        from room_editor.generate_sprite_previews import load_sprite_pack, decode_frame, rgb565_to_rgba
+        expected = {spec.species_id for spec in generator.PMD_SPECS if spec.idle_frames == 1} | {129}
+        self.assertEqual(expected, set(generator.RETIMED_BY_ID))
+        for spec in generator.RETIMED_PMD_SPECS:
+            _, packed, data, palettes = load_sprite_pack(
+                generator.PACK_SPRITE_OUT / f'{spec.species_id:03d}.smonsp', generator.sprite_kind_names())
+            frames = {f['kindName']: f for f in packed}
+            for (action, direction, index), original, shadow in generator.expansion.registered_frames(spec.species_id):
+                suffix = str(index) if action == 'sleeping' else f'{direction.upper()}_{index}'
+                name = f'{spec.ident}_{action.upper()}_{suffix}'
+                self.assertIn(name, frames)
+                frame = frames[name]
+                self.assertEqual(list(shadow), frame['shadow'], name)
+                self.assertEqual(shadow[1] - original.height // 2, frame['groundOffsetY'], name)
+                expected_pixels = [rgb565_to_rgba(generator.rgb565(r, g, b)) if a > 16 else (0, 0, 0, 0)
+                                   for r, g, b, a in original.getdata()]
+                self.assertEqual(expected_pixels, list(decode_frame(frame, data, palettes).getdata()), name)
+
+    def test_expanded_species_have_playable_sprite_packs(self):
+        from room_editor.generate_sprite_previews import decode_frame, load_sprite_pack
+
+        ids = {124, 214, 215, 220, 221, 225, 238, 263, 264, 265, 266, 267,
+               268, 269, 270, 271, 272, 273, 274, 275, 299, 302, 339, 340,
+               341, 342, 355, 356, 359}
+        self.assertEqual(ids, generator.EXPANSION_IDS)
+        names = generator.sprite_kind_names()
+        for species_id in sorted(ids):
+            path = generator.PACK_SPRITE_OUT / f'{species_id:03d}.smonsp'
+            self.assertTrue(path.is_file(), path.name)
+            packed_id, frames, data, palettes = load_sprite_pack(path, names)
+            self.assertEqual(species_id, packed_id)
+            frames_by_kind = {f['kindName']: f for f in frames}
+            self.assertEqual(len(frames_by_kind), len(frames))
+            spec = generator.EXPANSION_BY_ID[species_id]
+            expected = {'FRONT', 'BACK', 'ICON_0', 'STATUS'}
+            for direction in generator.FULL_DIRECTIONS:
+                for action, count in (('IDLE', spec.idle_frames), ('WALKING', spec.walking_frames)):
+                    expected.update(f'{spec.ident}_{action}_{direction.upper()}_{i}' for i in range(count))
+            expected.update(f'{spec.ident}_SLEEPING_{i}' for i in range(spec.sleeping_frames))
+            self.assertTrue(expected <= frames_by_kind.keys(), path.name)
+            for kind in expected:
+                frame = frames_by_kind[kind]
+                self.assertIsNotNone(decode_frame(frame, data, palettes).getbbox(), kind)
+                if kind.startswith(spec.ident):
+                    x, y, rx, ry = frame['shadow']
+                    self.assertTrue(0 < x < frame['width'] and 0 < y < frame['height'], kind)
+                    self.assertGreater(min(rx, ry), 0, kind)
+                    self.assertEqual(y - (frame['height'] + 1) // 2, frame['groundOffsetY'], kind)
+
     def test_scizor_source_rows_match_exported_and_packed_directions(self):
         import extract_pmd_eeveelution_frames as extractor
         from room_editor.generate_sprite_previews import (
@@ -107,7 +194,7 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
         playable = {sid for sid, _ in generator.species_rows()}
         metadata = json.loads(generator.SHADOW_METADATA.read_text())['frames']
         for spec in generator.NPC_PMD_SPECS:
-            self.assertNotIn(spec.species_id, playable)
+            self.assertEqual(spec.species_id in playable, spec.species_id == 225)
             sid, frames, rle, palettes = load_sprite_pack(
                 generator.PACK_SPRITE_OUT / f'{spec.species_id:03d}.smonsp', names)
             self.assertEqual(sid, spec.species_id)
@@ -137,8 +224,10 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
         self.assertGreater(dimensions[149][1], dimensions[1][1] * 2)
         with tempfile.TemporaryDirectory() as directory:
             header = Path(directory) / "PokemonBattleSizes.h"
-            generator.write_battle_sizes(header)
+            generator.write_battle_sizes(header, preserve_legacy=True)
             self.assertEqual(generator.OUT_BATTLE_SIZES.read_text(), header.read_text())
+        published = dict((sid, (w, h)) for sid, w, h in generator.battle_front_sizes(preserve_legacy=True))
+        self.assertEqual((82, 76), published[7])
 
     def test_battle_sizes_use_common_canvas_for_different_source_resolutions(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -203,7 +292,7 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
                 self.assertEqual("local-review", entry.get("calibration"), key)
 
     def test_shadow_pack_roundtrip_keeps_feet_separate_from_visible_bottom(self):
-        spec = generator.PMD_BY_ID[4]
+        spec = next(spec for spec in generator.PMD_SPECS if spec.species_id == 4)
         writer = generator.AssetWriter()
         generator.add_pmd_frames(writer, spec)
         kinds = {f["kind"]: i for i, f in enumerate(writer.frames)}
@@ -324,7 +413,7 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
     def test_all_explore_encounters_and_bosses_use_2x_front(self):
         self.assertEqual(
             configured_explore_species(),
-            generator.EXPLORE_FRONT_2X_SPECIES,
+            generator.EXPLORE_FRONT_2X_SPECIES | generator.EXPANSION_IDS,
         )
 
     def test_late_area_species_front_is_generated_at_2x(self):

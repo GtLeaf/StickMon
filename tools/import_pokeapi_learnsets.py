@@ -82,12 +82,18 @@ ORAS_STAT_CHANGE_OVERRIDES = {
     "rapid-spin": [],
 }
 
-# These two species intentionally keep their canonical non-damaging first move.
+# Keep a species' early moves in the permanent slot where the normal
+# damaging-move heuristic is unsuitable.
 BASIC_MOVE_OVERRIDES = {
     11: 106,   # Metapod: Harden
     129: 150,  # Magikarp: Splash
     130: 44,   # Gyarados: Bite after evolving
+    273: 106,  # Seedot: Harden at Lv. 3; Explosion begins at Lv. 33
 }
+
+# Delibird can learn Ice Shard in ORAS. Its sole level-up move, Present,
+# requires a damage/heal roll the current battle engine cannot resolve.
+BASIC_MOVE_FALLBACKS = {225: 420}
 
 # These moves require persistent PP or held-item state, neither of which exists
 # in the current battle model. Keep them out of learnsets instead of silently
@@ -442,7 +448,7 @@ def selected_level_moves(pokemon, version_group):
 
 
 def level_up_roster_ids(roster):
-    return sorted({int(value) for value in roster["speciesIds"] + roster.get("pendingSpeciesIds", [])})
+    return sorted({int(value) for value in roster["speciesIds"] + roster.get("expansionSpeciesIds", [])})
 
 
 def resource_id(resource):
@@ -566,19 +572,19 @@ def refresh_snapshot(roster):
             "entries": entries,
         })
 
-    pending_ids = {int(value) for value in roster.get("pendingSpeciesIds", [])}
+    expansion_ids = {int(value) for value in roster.get("expansionSpeciesIds", [])}
     available_moves = {
         entry["moveIdentifier"]
-        for species in raw_species if species["id"] not in pending_ids
+        for species in raw_species if species["id"] not in expansion_ids
         for entry in species["entries"]
-    } | set(roster.get("pendingMoveExceptions", []))
+    } | set(roster.get("expansionMoveExceptions", []))
     for species in raw_species:
-        if species["id"] in pending_ids:
+        if species["id"] in expansion_ids:
             species["entries"] = [
                 entry for entry in species["entries"] if entry["moveIdentifier"] in available_moves
             ]
             if not species["entries"]:
-                raise RuntimeError(f"pending species {species['id']} has no registered level-up moves")
+                raise RuntimeError(f"expansion species {species['id']} has no registered level-up moves")
 
     move_identifiers = {
         entry["moveIdentifier"] for species in raw_species for entry in species["entries"]
@@ -677,6 +683,11 @@ def refresh_snapshot(roster):
             override = BASIC_MOVE_OVERRIDES[species_id]
             if override in known_moves:
                 basic_move = override
+        if species_id in BASIC_MOVE_FALLBACKS and not move_by_id[basic_move]["battleSupported"]:
+            fallback = BASIC_MOVE_FALLBACKS[species_id]
+            if not move_by_id[fallback]["battleSupported"]:
+                raise RuntimeError(f"species {species_id} has no supported basic move fallback")
+            basic_move = fallback
         species.append({
             "id": species_id,
             "identifier": value["identifier"],

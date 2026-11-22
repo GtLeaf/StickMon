@@ -68,6 +68,14 @@ public:
     void recordDrawn(const ExploreRouteViewModel& model) const;
     void invalidateDrawn() const { drawnValid_ = false; }
 private:
+    struct PartyAnimation {
+        PokemonAnimationTiming::Clock clock;
+        PokemonAnimationTiming::Action action = PokemonAnimationTiming::Action::Idle;
+        uint16_t species = 0;
+        uint8_t frame = 0;
+    } partyAnimation_[2];
+    bool updatePartyAnimation(const ExploreSession::State& route,
+        const Game::GameState& gameState, uint32_t nowMs, bool active);
     void updateCamera();
     bool advanceWalkFrames(const ExploreSession::State& route, uint32_t nowMs);
     void requestBossDamage(const ExploreSession::State& route);

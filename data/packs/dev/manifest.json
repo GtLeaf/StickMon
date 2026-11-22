@@ -22,7 +22,7 @@
   "rooms": "rooms",
   "schema": 1,
   "sfxCount": 17,
-  "spriteCount": 68,
+  "spriteCount": 96,
   "sprites": "sprites",
   "uiAssets": "game/ui.smonfx",
   "version": "0.0.0-dev"

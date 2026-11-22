@@ -104,7 +104,7 @@ bool expandedEvolutionFamiliesWork() {
             std::fprintf(stderr, "new species %u is missing\n", unsigned(id));
             return false;
         }
-        if (!species->assetsPending) return false;
+        if (species->assetsPending || !isMoveBattleSupported(basicMoveIdForSpecies(*species))) return false;
     }
     constexpr uint16_t byLevel[][3] = {
         {220, 221, 33}, {238, 124, 30}, {263, 264, 20},
@@ -144,7 +144,11 @@ bool expandedEvolutionFamiliesWork() {
     if (stoneEvolutionTarget(legacyStoneSpecies, Game::ItemId::THUNDER_STONE) != findSpecies(26))
         return false;
     const Species& delibird = *findSpecies(225);
-    if (basicMoveIdForSpecies(delibird) != 217 || isMoveBattleSupported(217)) return false;
+    if (basicMoveIdForSpecies(delibird) != 420 || isMoveBattleSupported(217)) return false;
+    const Species& seedot = *findSpecies(273);
+    monster.level = 3;
+    resetMovesForLevel(monster, seedot);
+    if (monster.move1Id != 106 || monster.move2Id || monster.move3Id) return false;
     if (abilityForSpecies(wurmple) != AbilityId::SHIELD_DUST ||
         abilityForSpecies(lombre) != AbilityId::SWIFT_SWIM) return false;
     return true;

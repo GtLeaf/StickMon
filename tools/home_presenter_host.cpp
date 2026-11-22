@@ -1,4 +1,5 @@
 #include "app/HomePresenter.h"
+#include "assets/PokemonSprites.h"
 
 #include <cassert>
 #include <cmath>
@@ -184,6 +185,57 @@ void sleepWrapRestartAndIndependentInstancesKeepTheirOwnPhase() {
     closeTo(presenter.sleepExpansion(7200), 0);
     assert(other.sleepFrame(2700) == 1);
 }
+
+void originalSleepUsesAllFramesAndFreezesWhileInactive() {
+    using Action = PokemonAnimationTiming::Action;
+    Presenter presenter;
+    // Duskull's pinned Sleep durations are 8,8,16,8,8,8,16,8 ticks.
+    const uint32_t boundaries[] = {0, 134, 267, 534, 667, 800, 934, 1200, 1334};
+    presenter.startSleep(355, 1000, 800);
+    for (uint8_t i = 0; i < 9; ++i) {
+        presenter.animationFrame(0, 355, Action::Sleep, 1000 + boundaries[i]);
+        assert(presenter.sleepFrame(1000 + boundaries[i]) == i % 8);
+    }
+    presenter.startSleep(355, 3000, 700);
+    presenter.animationFrame(0, 355, Action::Sleep, 3267);
+    assert(presenter.sleepFrame(3267) == 2);
+    presenter.animationFrame(0, 355, Action::Sleep, 3300, false);
+    presenter.animationFrame(0, 355, Action::Sleep, 9000, false);
+    // Rendering is a pure read, including stale render timestamps.
+    assert(presenter.sleepFrame(10000) == 2);
+    assert(presenter.sleepFrame(1000) == 2);
+    presenter.animationFrame(0, 355, Action::Sleep, 10000);
+    presenter.animationFrame(0, 355, Action::Sleep, 10267);
+    assert(presenter.sleepFrame(10267) == 3);
+    // Idle/Walk select distinct clocks by action, and companion phase is independent.
+    assert(presenter.animationFrame(0, 214, Action::Idle, 11000) == 0);
+    assert(presenter.animationFrame(0, 214, Action::Idle, 11500) == 1);
+    assert(presenter.animationFrame(1, 214, Action::Idle, 11500) == 0);
+    assert(presenter.animationFrame(0, 214, Action::Walk, 11500) == 0);
+    assert(presenter.animationFrame(0, 214, Action::Walk, 11634) == 1);
+}
+
+void originalSleepAlsoRestartsTheLockBreathingClock() {
+    Presenter presenter, fresh;
+    // The lock renderer uses sleepExpansion independently of sprite timing.
+    // A previous legacy sleep must not leak its epoch or frame interval.
+    presenter.startSleep(1, 1000, 700);
+    presenter.startSleep(355, 12345, 800);
+    fresh.startSleep(355, 12345, 800);
+    AmoledV1::SleepBreathClock baseline;
+    PokemonSprites::PetAnimationProfile profile{};
+    assert(PokemonSprites::petAnimationProfile(355, profile));
+    // This fixture has no Duskull pack, so the existing bounds selection uses
+    // frame zero as its expanded frame, just as the legacy path does.
+    baseline.start(12345, 800, profile.sleepingFrames, 0);
+    for (uint32_t offset : {0U, 400U, 800U, 1200U, 3200U, 6400U}) {
+        closeTo(presenter.sleepExpansion(12345 + offset), baseline.expansion(12345 + offset));
+        closeTo(presenter.sleepExpansion(12345 + offset), fresh.sleepExpansion(12345 + offset));
+    }
+    presenter.animationFrame(0, 355, PokemonAnimationTiming::Action::Sleep, 12612);
+    assert(presenter.sleepFrame(12612) == 2);
+    assert(presenter.sleepFrame(999999) == 2); // Getter remains pure.
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -197,6 +249,8 @@ int main(int argc, char** argv) {
     manualPanClampsHoldsAndEasesBack();
     sleepSelectsTheTallestThenWidestVisibleFrame();
     sleepWrapRestartAndIndependentInstancesKeepTheirOwnPhase();
+    originalSleepUsesAllFramesAndFreezesWhileInactive();
+    originalSleepAlsoRestartsTheLockBreathingClock();
     assert(GameRandom::next() == 332584831u);
     std::puts("home presenter camera, resource bounds, sleep phase, wrap and RNG passed");
 }

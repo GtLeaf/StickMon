@@ -1,6 +1,7 @@
 #include "game/ExploreDestinations.h"
 #include "ui/common/MarketView.h"
 #include "ui/ExploreScreens.h"
+#include "presentation/PokemonAnimationView.h"
 #if STICKMON_EXPLORE_POSTCARD
 #include "ui/ExplorePostcardUi.h"
 #endif
@@ -395,8 +396,8 @@ void drawExploreRouteBoss(Canvas565& canvas,
     PokemonSprites::WalkingAnimation animation{};
     const PokemonSprites::SpriteFrame* frame = nullptr;
     bool flipX = false;
-    if (PokemonSprites::walkingAnimation(
-            model.bossSpeciesId, direction,
+    if (PokemonAnimationView::animationFor(
+            model.bossSpeciesId, direction, patrolMoving,
             animation) && animation.frameCount > 0) {
         uint8_t frameIndex = 0;
         if (patrolMoving) {
@@ -412,6 +413,16 @@ void drawExploreRouteBoss(Canvas565& canvas,
             frameIndex = PokemonMotion::movementFrame(
                 PokemonMotion::behaviorForSpecies(model.bossSpeciesId),
                 animation.frameCount, moveElapsed, moveElapsed, moveDuration);
+            frameIndex = PokemonAnimationTiming::frameAt(model.bossSpeciesId,
+                PokemonAnimationTiming::Action::Walk, moveElapsed, frameIndex);
+        } else {
+            const uint32_t idleElapsed = patrolPhase >= EXPLORE_ROUTE_BOSS_PATROL_RETURN_END_MS
+                ? patrolPhase - EXPLORE_ROUTE_BOSS_PATROL_RETURN_END_MS
+                : patrolPhase >= EXPLORE_ROUTE_BOSS_PATROL_OUT_END_MS
+                    ? patrolPhase - EXPLORE_ROUTE_BOSS_PATROL_OUT_END_MS
+                    : patrolPhase + EXPLORE_ROUTE_BOSS_PATROL_CYCLE_MS - EXPLORE_ROUTE_BOSS_PATROL_RETURN_END_MS;
+            frameIndex = PokemonAnimationTiming::frameAt(model.bossSpeciesId,
+                PokemonAnimationTiming::Action::Idle, idleElapsed);
         }
         frame = PokemonSprites::findSpeciesSprite(
             model.bossSpeciesId,
@@ -478,10 +489,10 @@ AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY
     PokemonSprites::WalkingAnimation animation{};
     const PokemonSprites::SpriteFrame* frame = nullptr;
     bool flipX = false;
-    if (PokemonSprites::walkingAnimation(
-            speciesId, direction, animation) &&
+    if (PokemonAnimationView::animationFor(
+            speciesId, direction, walking, animation) &&
         animation.frameCount > 0) {
-        uint8_t frameIndex = walking
+        uint8_t frameIndex = (walking || PokemonAnimationTiming::hasTiming(speciesId))
             ? static_cast<uint8_t>(petFrame % animation.frameCount)
             : 0;
         auto kind = static_cast<PokemonSprites::SpriteKind>(
@@ -532,10 +543,10 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
     PokemonSprites::WalkingAnimation animation{};
     const PokemonSprites::SpriteFrame* frame = nullptr;
     bool flipX = false;
-    if (PokemonSprites::walkingAnimation(
-            speciesId, direction, animation) &&
+    if (PokemonAnimationView::animationFor(
+            speciesId, direction, walking, animation) &&
         animation.frameCount > 0) {
-        uint8_t frameIndex = walking
+        uint8_t frameIndex = (walking || PokemonAnimationTiming::hasTiming(speciesId))
             ? static_cast<uint8_t>(petFrame % animation.frameCount)
             : 0;
         auto kind = static_cast<PokemonSprites::SpriteKind>(
@@ -610,7 +621,7 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
         }
         const int frameKind = static_cast<int>(
             static_cast<uint16_t>(animation.base) +
-            (walking ? petFrame % animation.frameCount : 0));
+            ((walking || PokemonAnimationTiming::hasTiming(speciesId)) ? petFrame % animation.frameCount : 0));
         const int frameGroundOffset = PokemonSprites::frameGroundOffsetY(frame);
         Platform::logf(
             "[AmoledExploreDiag] draw role=%s species=%u dir=%u(%s) "
@@ -692,7 +703,7 @@ const PokemonSprites::SpriteFrame* wildlifeFrame(const ExploreEcology::Pose& pos
             if (count) {
                 const auto kind = static_cast<PokemonSprites::SpriteKind>(
                     static_cast<uint16_t>(sleeping ? profile.sleepingBase : profile.idleBase) +
-                    (sleeping ? 0 : direction * count) + pose.frame % count);
+                    (sleeping ? 0 : direction * count) + pose.artworkFrame() % count);
                 if (const auto* frame = PokemonSprites::findCachedSpeciesSprite(pose.speciesId, kind))
                     return frame;
             }
@@ -706,7 +717,7 @@ const PokemonSprites::SpriteFrame* wildlifeFrame(const ExploreEcology::Pose& pos
         const auto kind = static_cast<PokemonSprites::SpriteKind>(
             static_cast<uint16_t>(animation.base) +
             ((pose.airborne || pose.walking || pose.activity == ExploreEcology::Activity::TAKEOFF ||
-              pose.activity == ExploreEcology::Activity::LAND) ? pose.frame % animation.frameCount : 0));
+              pose.activity == ExploreEcology::Activity::LAND) ? pose.artworkFrame() % animation.frameCount : 0));
         if (const auto* frame = PokemonSprites::findCachedSpeciesSprite(pose.speciesId, kind))
             return frame;
     }
