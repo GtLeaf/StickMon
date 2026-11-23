@@ -75,6 +75,7 @@ public:
     void enterDeepSleep(uint64_t, bool) override { deepSleepRequested_ = true; }
 
     bool initialize() override { return true; }
+    bool hasAuthoritativeLookup() const override { return true; }
     Platform::BlobLookup lookupBlob(const char*,const char*,size_t&) override;
     size_t blobSize(const char* nameSpace, const char* key) override;
     bool readBlob(const char* nameSpace, const char* key,

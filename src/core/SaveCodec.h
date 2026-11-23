@@ -12,23 +12,26 @@
 namespace SaveCodec {
 
 static constexpr uint32_t MAGIC = 0x32435653; // SVC2
+// Schema 11 appends capacity/quota and overflow companions/care records.
 // Schema 1 = v3, schema 2 = v4, schema 3 appends daily care records (v5),
 // schema 4 appends market stall services (v6), schema 5 the Kecleon shelf (v7),
 // schema 6 the Chansey stall (v8), schema 7 the reserved Kecleon box bytes
 // (raw state layout remains v8); schema 8 appends the periodic market (v9);
 // schema 9 appends supply advice and the second period box draw (v10),
 // schema 10 replaces the old friendship counters with three LRU records (v11).
-static constexpr uint16_t SCHEMA_VERSION = 10;
+static constexpr uint16_t SCHEMA_VERSION = 11;
 static constexpr uint16_t MIN_SUPPORTED_SCHEMA_VERSION = 1;
 // State version stored by schema-1 payloads (Game::SAVE_VERSION at the time).
 static constexpr uint16_t SCHEMA_1_STATE_VERSION = 3;
 static constexpr size_t HEADER_BYTES = 16;
-static constexpr size_t MAX_ENCODED_BYTES = 4096;
+static constexpr size_t MAX_ENCODED_BYTES = 24576;
+static constexpr size_t MAX_ENVELOPE_BYTES = HEADER_BYTES + UINT16_MAX;
+bool validEnvelope(const uint8_t* input,size_t length);
 
 constexpr uint16_t stateVersionForSchema(uint16_t schema) {
     return schema == 1 ? SCHEMA_1_STATE_VERSION : schema == 2 ? 4 :
            schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 :
-           schema <= 7 ? 8 : schema == 8 ? 9 : schema == 9 ? 10 : 11;
+           schema <= 7 ? 8 : schema == 8 ? 9 : schema == 9 ? 10 : schema == 10 ? 11 : 12;
 }
 static_assert(stateVersionForSchema(SCHEMA_VERSION) == Game::SAVE_VERSION,
               "save schema and game-state version must agree");

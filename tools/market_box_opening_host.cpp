@@ -21,8 +21,8 @@ struct Driver {
     }
     UI::Request tap(int x,int y) { event(Type::DOWN,x,y);return event(Type::UP,x,y); }
     void selectBox() {
-        event(Type::DOWN,184,410);event(Type::MOVE,184,58,100);event(Type::UP,184,58,200);
-        assert(ui.scrollOffset()==352);tap(184,404);assert(ui.page()==Page::CONFIRM);
+        event(Type::DOWN,184,410);event(Type::MOVE,184,-14,100);event(Type::UP,184,-14,200);
+        assert(ui.scrollOffset()==424);tap(184,332);assert(ui.page()==Page::CONFIRM);
     }
     void clearSound() { SfxCue cue;while(ui.takeSfx(cue)){} }
     void silent() { SfxCue cue;assert(!ui.takeSfx(cue)); }
@@ -55,7 +55,7 @@ static void explicitOpeningAndOnceOnlySound() {
     d.advance(1);assert(d.ui.page()==Page::RESULT);d.event(Type::UP,184,414);
     assert(d.ui.page()==Page::RESULT);d.advance(4000);d.silent();
     assert(!std::memcmp(&bought,&d.state,sizeof(bought)));
-    d.tap(184,414);assert(d.ui.page()==Page::SHELF&&d.ui.scrollOffset()==352);
+    d.tap(184,414);assert(d.ui.page()==Page::SHELF&&d.ui.scrollOffset()==424);
 }
 static void failedSaveAndClose() {
     Driver d;d.selectBox();const auto before=d.state;

@@ -32,7 +32,7 @@ inline uint16_t blobCrc16(const uint8_t* bytes, size_t length) {
 
 inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
                                       std::vector<uint8_t>& out, uint16_t schema) {
-    constexpr size_t CARE_EXTENSION_BYTES = 4 + Game::CARE_REWARD_RECORD_CAP * 35;
+    constexpr size_t CARE_EXTENSION_BYTES = 4 + 22 * 35;
     // Schema 4 (v6) appends the market tutor record after the care records.
     constexpr size_t MARKET_EXTENSION_BYTES = 4 + 2 + 2 + 1 + 1 + Game::MARKET_TUTOR_TRAIN_CAP * 8;
     // Schema 5 (v7) appends the Kecleon shelf after the tutor record.
@@ -53,13 +53,15 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
         length < LEGACY_PITY_OFFSET + CURRENT_PITY_BYTES + VIEW_PAYLOAD_BYTES + removedBytes) {
         return false;
     }
+    const size_t originalLength=length;
+    if(encoded[4]>=11)length-=6; // Default-capacity schema-11 appendage, no overflow records.
     const size_t extensionOffset = length - VIEW_PAYLOAD_BYTES - removedBytes;
     out.clear();
     out.reserve(length - removedBytes + Game::LEGACY_FRIENDSHIP_PITY_COUNT - CURRENT_PITY_BYTES);
     out.insert(out.end(), encoded, encoded + LEGACY_PITY_OFFSET);
     out.insert(out.end(), Game::LEGACY_FRIENDSHIP_PITY_COUNT, 0);
     out.insert(out.end(), encoded + LEGACY_PITY_OFFSET + CURRENT_PITY_BYTES, encoded + extensionOffset);
-    out.insert(out.end(), encoded + extensionOffset + removedBytes, encoded + length);
+    out.insert(out.end(), encoded + originalLength - VIEW_PAYLOAD_BYTES, encoded + originalLength);
     out[4] = static_cast<uint8_t>(schema);
     out[5] = 0;
     // State version lives right after the payload magic.

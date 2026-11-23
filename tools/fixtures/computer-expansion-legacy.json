@@ -1,0 +1,9 @@
+{
+  "sourceCommit": "a8cf3ef",
+  "schema10": "Encoded by the original schema-10 codec before implementation; sequence77, twenty contacts,7000 coins, potion7, care record21 budget73.",
+  "raw11": "Original2540-byte state +96-byte view +8-byte envelope. Nonzero v11 LRU record151/3 added to the frozen raw fixture and its legacy state CRC recomputed.",
+  "sha256": {
+    "computer-expansion-schema10.bin": "df4617300717f454017ae902115cbf88f65637956f98db82f23fc3203df46d8a",
+    "computer-expansion-raw11-pity.bin": "9c3b369a29cdc8c56efbc0a98063d5a124d29b855525538abbd099e5c1669fe2"
+  }
+}

@@ -157,6 +157,7 @@ public:
     virtual size_t blobSize(const char* nameSpace, const char* key) = 0;
     // Absence must be authoritative before initializing monotonic metadata.
     // Legacy backends cannot distinguish a zero size from an I/O failure.
+    virtual bool hasAuthoritativeLookup() const { return false; }
     virtual BlobLookup lookupBlob(const char* nameSpace,const char* key,size_t& length) {
         length=blobSize(nameSpace,key);
         return length?BlobLookup::FOUND:BlobLookup::FAILED;

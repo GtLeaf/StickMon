@@ -1,7 +1,9 @@
 #include "core/SaveCodec.h"
 #include "game/FriendshipPity.h"
+#include "game/StorageCapacity.h"
 
 #include <cstring>
+#include <new>
 
 namespace SaveCodec {
 namespace {
@@ -189,6 +191,20 @@ void readMonster(Reader& reader, Game::MonsterRuntime& monster) {
     monster.lastWindowGazeAt = reader.u32();
 }
 
+void writeCare(Writer& writer,const Game::CareRewardRecord& record) {
+        writer.u32(record.ivPacked);
+        writer.u32(record.metAt);
+        writer.u32(record.budget);
+        for (uint32_t amount : record.awarded) writer.u32(amount);
+        writer.u8(record.nature);
+        writer.u8(record.metArea);
+        writer.u8(static_cast<uint8_t>(record.origin));
+        writer.u8(record.bathStageMask);
+        writer.u8(record.pairCount);
+        writer.u8(record.pendingOldLevel);
+        writer.u8(record.valid ? 1 : 0);
+    }
+
 void writeState(Writer& writer, const Game::GameState& state) {
     writer.u32(Game::SAVE_MAGIC);
     writer.u16(Game::SAVE_VERSION);
@@ -198,7 +214,7 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u8(state.teamCount);
     for (const Game::MonsterRuntime& monster : state.team) writeMonster(writer, monster);
     writer.u8(state.storageCount);
-    for (const Game::MonsterRuntime& monster : state.storage) writeMonster(writer, monster);
+    for (unsigned i=0;i<20;++i) writeMonster(writer,state.storage[i]);
 
     writer.u8(state.bag.paralyzeHeal);
     writer.u8(state.bag.awakening);
@@ -272,19 +288,7 @@ void writeState(Writer& writer, const Game::GameState& state) {
     for (uint8_t value : state.normalBossMissCount) writer.u8(value);
     writer.u8(state.debugMotionFlags);
     writer.u32(state.careRewardDay);
-    for (const auto& record : state.careRewards) {
-        writer.u32(record.ivPacked);
-        writer.u32(record.metAt);
-        writer.u32(record.budget);
-        for (uint32_t amount : record.awarded) writer.u32(amount);
-        writer.u8(record.nature);
-        writer.u8(record.metArea);
-        writer.u8(static_cast<uint8_t>(record.origin));
-        writer.u8(record.bathStageMask);
-        writer.u8(record.pairCount);
-        writer.u8(record.pendingOldLevel);
-        writer.u8(record.valid ? 1 : 0);
-    }
+    for (unsigned i=0;i<22;++i) writeCare(writer,state.careRewards[i]);
     const auto& tutor = state.marketTutor;
     writer.u32(tutor.periodDay);
     writer.u16(tutor.move);
@@ -318,10 +322,35 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u8(state.marketSupply.pendingAdvice);
     writer.u8(state.marketSupply.stockPlan);
     writer.u8(state.marketSupply.boxRoll2);
+    writer.u8(state.storageUpgrades);
+    writer.u32(state.storageExpansionPeriod);
+    for (unsigned i=20;i<state.storageCount;++i) writeMonster(writer,state.storage[i]);
+    uint8_t extraCare=0;
+    for (unsigned i=22;i<Game::CARE_REWARD_RECORD_CAP;++i)
+        if(state.careRewards[i].valid||state.careRewards[i].pendingOldLevel)++extraCare;
+    writer.u8(extraCare);
+    for (unsigned i=22;i<Game::CARE_REWARD_RECORD_CAP;++i)
+        if(state.careRewards[i].valid||state.careRewards[i].pendingOldLevel) {
+            writer.u8(uint8_t(i));writeCare(writer,state.careRewards[i]);
+        }
 }
 
-void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
-    state = Game::GameState{};
+void readCare(Reader& reader,Game::CareRewardRecord& record) {
+            record.ivPacked = reader.u32();
+            record.metAt = reader.u32();
+            record.budget = reader.u32();
+            for (uint32_t& amount : record.awarded) amount = reader.u32();
+            record.nature = reader.u8();
+            record.metArea = reader.u8();
+            record.origin = static_cast<Game::Origin>(reader.u8());
+            record.bathStageMask = reader.u8();
+            record.pairCount = reader.u8();
+            record.pendingOldLevel = reader.u8();
+            record.valid = reader.u8() != 0;
+        }
+
+bool readState(Reader& reader, uint16_t schema, Game::GameState& state) {
+    new (&state) Game::GameState{};
     uint32_t magic = reader.u32();
     uint16_t version = reader.u16();
     state.magic = magic;
@@ -332,7 +361,7 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
     state.teamCount = reader.u8();
     for (Game::MonsterRuntime& monster : state.team) readMonster(reader, monster);
     state.storageCount = reader.u8();
-    for (Game::MonsterRuntime& monster : state.storage) readMonster(reader, monster);
+    for (unsigned i=0;i<20;++i) readMonster(reader,state.storage[i]);
 
     state.bag.paralyzeHeal = reader.u8();
     state.bag.awakening = reader.u8();
@@ -414,19 +443,7 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
     if (schema >= 2) state.debugMotionFlags = reader.u8();
     if (schema >= 3) {
         state.careRewardDay = reader.u32();
-        for (auto& record : state.careRewards) {
-            record.ivPacked = reader.u32();
-            record.metAt = reader.u32();
-            record.budget = reader.u32();
-            for (uint32_t& amount : record.awarded) amount = reader.u32();
-            record.nature = reader.u8();
-            record.metArea = reader.u8();
-            record.origin = static_cast<Game::Origin>(reader.u8());
-            record.bathStageMask = reader.u8();
-            record.pairCount = reader.u8();
-            record.pendingOldLevel = reader.u8();
-            record.valid = reader.u8() != 0;
-        }
+        for (unsigned i=0;i<22;++i) readCare(reader,state.careRewards[i]);
     }
     if (schema >= 4) {
         auto& tutor = state.marketTutor;
@@ -473,7 +490,21 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
         state.marketSupply.stockPlan = reader.u8();
         state.marketSupply.boxRoll2 = reader.u8();
     }
+    if (schema >= 11) {
+        state.storageUpgrades=reader.u8();
+        state.storageExpansionPeriod=reader.u32();
+        if(state.storageUpgrades>Game::StorageCapacity::MAX_UPGRADES || state.storageCount>Game::StorageCapacity::capacity(state))return false;
+        for(unsigned i=20;i<state.storageCount;++i)readMonster(reader,state.storage[i]);
+        const auto count=reader.u8();
+        if(count>Game::CARE_REWARD_RECORD_CAP-22)return false;
+        bool seen[Game::CARE_REWARD_RECORD_CAP]{};
+        for(unsigned i=0;i<count;++i){const auto index=reader.u8();
+            if(index<22||index>=Game::CARE_REWARD_RECORD_CAP||seen[index])return false;
+            seen[index]=true;readCare(reader,state.careRewards[index]);
+        }
+    }
     state.checksum = 0;
+    return reader.ok();
 }
 
 void writeView(Writer& writer, const MainSceneViewState& view) {
@@ -555,6 +586,14 @@ void readView(Reader& reader, MainSceneViewState& view) {
 
 } // namespace
 
+bool validEnvelope(const uint8_t* input,size_t length) {
+    if(!input||length<HEADER_BYTES||length>MAX_ENVELOPE_BYTES)return false;
+    Reader reader(input,length);
+    if(reader.u32()!=MAGIC||reader.u16()<MIN_SUPPORTED_SCHEMA_VERSION||reader.u16()!=0)return false;
+    reader.u32();const auto payload=reader.u16();const auto expected=reader.u16();
+    return reader.ok()&&payload==length-HEADER_BYTES&&crc16(input,length)==expected;
+}
+
 size_t encodedSizeUpperBound() { return MAX_ENCODED_BYTES; }
 
 bool encode(const Game::GameState& state,
@@ -564,7 +603,7 @@ bool encode(const Game::GameState& state,
             size_t capacity,
             size_t& written) {
     written = 0;
-    if (!output || capacity < HEADER_BYTES) return false;
+    if (!output || capacity < HEADER_BYTES || state.storageUpgrades > Game::StorageCapacity::MAX_UPGRADES || state.storageCount > Game::StorageCapacity::capacity(state)) return false;
 
     Writer writer(output, capacity);
     writer.u32(MAGIC);
@@ -609,14 +648,15 @@ bool decode(const uint8_t* input,
     if (!header.ok() || payloadLength != length - HEADER_BYTES) return false;
 
     Reader reader(input + HEADER_BYTES, payloadLength);
-    readState(reader, schema, snapshot.state);
+    if(!readState(reader, schema, snapshot.state))return false;
     readView(reader, snapshot.view);
     const uint16_t expectedStateVersion = stateVersionForSchema(schema);
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
         snapshot.state.version != expectedStateVersion ||
         snapshot.state.teamCount > Game::TEAM_CAP ||
-        snapshot.state.storageCount > Game::STORAGE_CAP) {
+        snapshot.state.storageCount > (schema < 11 ? 20 : Game::StorageCapacity::capacity(snapshot.state)) ||
+        snapshot.state.storageUpgrades > Game::StorageCapacity::MAX_UPGRADES) {
         return false;
     }
     // Older schemas decode into defaults; present the current state version so

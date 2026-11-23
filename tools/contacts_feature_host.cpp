@@ -140,13 +140,13 @@ int main() {
     const auto beforeActions = host.game;
     host.game.teamCount = Game::TEAM_CAP; host.visiting[2] = host.locked[2] = true;
     press(0);
-    assert(!page.storageInviteConfirmOpen && host.notice == Ui::Storage::TEAM_FULL_TOAST && host.duration == 1100);
+    assert(!page.storageInviteConfirmOpen && std::strcmp(host.notice, Ui::Storage::TEAM_FULL_TOAST) == 0 && host.duration == 1100);
     host.game.teamCount = 1;
     press(0);
-    assert(host.notice == Ui::Storage::VISITING && !page.storageInviteConfirmOpen);
+    assert(std::strcmp(host.notice, Ui::Storage::VISITING) == 0 && !page.storageInviteConfirmOpen);
     host.visiting[2] = false;
     press(0);
-    assert(host.notice == Ui::Storage::INVITE_LOCKED && !page.storageInviteConfirmOpen);
+    assert(std::strcmp(host.notice, Ui::Storage::INVITE_LOCKED) == 0 && !page.storageInviteConfirmOpen);
     host.locked[2] = false;
     press(0);
     assert(page.storageInviteConfirmOpen && page.storageInviteConfirmYes);
@@ -201,4 +201,9 @@ int main() {
     assert(page.handleTap(0) && page.storageActionOpen);
     assert(page.handleTap(128) && host.statusSlot == 0);
     assert(host.navigationTutorials == 2);
+    page.closePopups();host.game.storageUpgrades=9;host.game.storageCount=200;
+    host.game.storage[199]=host.game.storage[2];host.game.storage[199].ivPacked=999;
+    assert(page.handleTap(199)&&page.storageCursor==199&&page.storageActionOpen);
+    assert(page.handleTap(128)&&host.statusSlot==199);
+
 }

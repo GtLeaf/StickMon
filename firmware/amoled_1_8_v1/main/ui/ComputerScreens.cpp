@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "ui/ComputerScreens.h"
 
 #include <algorithm>
@@ -346,7 +347,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
                 char count[12];
                 std::snprintf(count, sizeof(count),
                               Ui::Computer::STORAGE_COUNT_FMT,
-                              model.state->storageCount);
+                              model.state->storageCount, Game::StorageCapacity::capacity(*model.state));
                 text(canvas, 344 - textWidth(count), y + 26, count,
                      selected ? rgb(248, 210, 105) : rgb(126, 175, 175));
             }
@@ -537,7 +538,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
         UiCommon::drawPageHeader(canvas, title);
         char capacity[12];
         std::snprintf(capacity, sizeof(capacity),
-                      Ui::Computer::STORAGE_COUNT_FMT, count);
+                      Ui::Computer::STORAGE_COUNT_FMT, count, model.state?Game::StorageCapacity::capacity(*model.state):Game::StorageCapacity::INITIAL);
         UiCommon::drawPageHeaderCenteredText(canvas, capacity,
                                               rgb(126, 175, 175));
         pageClip.reset();

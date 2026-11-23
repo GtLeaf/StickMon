@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "ui/ExplorePostcardLayout.h"
 #include "game/MarketMapData.h"
 #include "game/MarketWelcome.h"
@@ -840,9 +841,9 @@ void AmoledApp::debugReportSaveState() {
         unsigned(presentation.exploreRoutePetFrame),
         unsigned(presentation.exploreRouteFollowerFrame),
         unsigned(presentation.exploreRouteMapFrame));
-    Game::GameState saved;
+    std::unique_ptr<Game::GameState> saved(new (std::nothrow) Game::GameState);
     MainSceneViewState savedView;
-    const bool loaded = saveManager.load(saved, savedView);
+    const bool loaded = saved&&saveManager.load(*saved, savedView);
     const auto report = [&](const char* source, const Game::GameState& state) {
         Platform::logf(
             "[SaveDiag] source=%s scene=%u phase=%u saves=%lu steps=%u "
@@ -857,7 +858,7 @@ void AmoledApp::debugReportSaveState() {
     };
     debugReportHomeState();
     report("ram", gameState);
-    if (loaded) report("disk", saved);
+    if (loaded) report("disk", *saved);
     else Platform::logLine("[SaveDiag] source=disk unavailable");
 }
 
@@ -8936,24 +8937,8 @@ void AmoledApp::leaveTeamMember(uint8_t teamSlot, uint32_t nowMs) {
         gameState.team[teamSlot].origin == Game::Origin::VISITOR) {
         return;
     }
-    if (gameState.storageCount >= Game::STORAGE_CAP) {
-        setToast(Ui::Team::CONTACTS_FULL_TOAST, nowMs);
-        return;
-    }
-
-    int8_t contactSlot = -1;
-    for (uint8_t index = 0;
-         index < gameState.storageCount && index < Game::STORAGE_CAP; ++index) {
-        if (ContactRoster::sameMonster(gameState.storage[index],
-                                       gameState.team[teamSlot])) {
-            contactSlot = static_cast<int8_t>(index);
-            break;
-        }
-    }
-    if (contactSlot >= 0) {
-        gameState.storage[contactSlot] = gameState.team[teamSlot];
-    } else {
-        gameState.storage[gameState.storageCount++] = gameState.team[teamSlot];
+    if(!ContactRoster::storeTeamContact(gameState,teamSlot)){
+        setToast(Ui::Team::CONTACTS_FULL_TOAST,nowMs);return;
     }
     for (uint8_t index = teamSlot;
          index + 1 < gameState.teamCount && index + 1 < Game::TEAM_CAP;
@@ -9266,10 +9251,7 @@ bool AmoledApp::saveState() {
 #endif
     if (gameState.oobeDone) persistHomeViewState(Platform::clock().millis());
     else mainViewState = MainSceneViewState{};
-    Game::GameState persistentState = gameState;
-    persistentState.activeSlot = 0;
-    bool snapshotSaved = saveManager.saveSnapshot(
-        persistentState, mainViewState);
+    bool snapshotSaved = saveManager.saveSnapshot(gameState, mainViewState);
     bool historySaved = !encounterHistoryDirty ||
         saveManager.saveEncounterHistory(encounterHistory);
     if (historySaved) encounterHistoryDirty = false;
@@ -9454,11 +9436,12 @@ void AmoledApp::openMarketTutor(uint32_t nowMs) {
     const char* welcome = nullptr;
     bool giftSaved = false;
     if (!gameState.marketTutorGifted) {
-        const Game::GameState before = gameState;
+        const auto before = gameState.marketTutorGifted;
+        const auto scalesBefore=gameState.bag.heartScale;
         const auto result = Game::MarketWelcome::grant(gameState);
         if (result == Game::MarketWelcome::Result::GRANTED) {
             if (saveState()) { welcome = Ui::MarketTutorText::WELCOME_GIFT; giftSaved = true; }
-            else { gameState = before; welcome = Ui::MarketTutorText::WELCOME_RETRY; }
+            else { gameState.marketTutorGifted = before; gameState.bag.heartScale=scalesBefore; welcome = Ui::MarketTutorText::WELCOME_RETRY; }
         } else if (result == Game::MarketWelcome::Result::BAG_FULL) welcome = Ui::MarketTutorText::WELCOME_FULL;
     }
     marketTutorUi_.open(gameState, welcome);

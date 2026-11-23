@@ -166,8 +166,8 @@ void verifyRoundTrip() {
     uint32_t sequence = 0;
     assert(SaveCodec::decode(encoded, length, decoded, &sequence));
     assert(sequence == 0x12345678);
-    assert(SaveCodec::SCHEMA_VERSION == 10);
-    assert(length == 2516 - 38 + 9);
+    assert(SaveCodec::SCHEMA_VERSION == 11);
+    assert(length == 2516 - 38 + 9 + 6);
     assert(encoded[1456] == 0x7d && encoded[1457] == 1 && encoded[1458] == 2);
     assert(decoded.state.friendshipPity.entries[0].speciesId == 381);
     assert(decoded.state.friendshipPity.entries[1].speciesId == 151);
@@ -378,7 +378,7 @@ void verifyAllLegacySchemasPreservePrefix() {
             assert(decoded.state.marketShop.boxBought == 1);
             assert(decoded.state.marketShop.boxRoll == 99);
             const size_t extensionsRemoved = schema == 7 ? 42 : schema == 8 ? 3 : 0;
-            assert(legacy.size() + extensionsRemoved == length + 38 - 9);
+            assert(legacy.size() + extensionsRemoved == length + 38 - 9 - 6);
         }
         assert(decoded.view.secondary.foodRetryRemainingMs == 9999);
     }

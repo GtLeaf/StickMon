@@ -32,7 +32,9 @@ StandbyBoot resumeStandbyBootFlow(Board& board, Storage& storage, Retention& ret
         else retention.clear();
         return result;
     }
-    Game::GameState state{};
+    std::unique_ptr<Game::GameState> stateHeap(new (std::nothrow) Game::GameState{});
+    if(!stateHeap){if(timer)retry();else retention.clear();return result;}
+    auto& state=*stateHeap;
     MainSceneViewState view{};
     if (!storage.load(state, view) ||
         !retained.valid(standbySnapshotHash(state, view), true, board.standbyMicros())) {
@@ -45,7 +47,7 @@ StandbyBoot resumeStandbyBootFlow(Board& board, Storage& storage, Retention& ret
     advanceStandbyCare(state, next.context, next.appliedUs, board.standbyMicros());
     if (!storage.save(state, view)) {
         if (timer) { retry(); return result; }
-        result.pendingState.reset(new (std::nothrow) Game::GameState(state));
+        result.pendingState=std::move(stateHeap);
         if (!result.pendingState) { retry(); return result; }
         result.restored = true;
         result.context = next.context;

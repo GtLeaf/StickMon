@@ -7,6 +7,7 @@
 #include "core/TouchTap.h"
 #include "core/UiStrings.h"
 #include "game/MarketShopService.h"
+#include "ui/common/MarketExpansionUi.h"
 #include "game/MarketSupply.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/TextBlock.h"
@@ -67,6 +68,7 @@ public:
         page_ = Page::GREET; transition_ = Transition::GREET_IN;
         greet_ = Game::MarketShop::soldOut(state) ? MarketShopText::GREET_SOLD_OUT : MarketShopText::GREET;
         period_ = state.marketSeason.periodDay;
+        rowCount_ = Game::MarketShop::rowCount(state);
     }
     void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
     void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
@@ -127,6 +129,8 @@ public:
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
+        rowCount_ = Game::MarketShop::rowCount(state);
+        scroll_ = std::min(scroll_,maxScroll());
         scrollOnly_ = false;
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (page_ == Page::BOX_ARRIVE || page_ == Page::BOX_OPEN) { cancelTouch(); return none; }
@@ -206,6 +210,7 @@ private:
     bool scrollOnly_ = false;
     Game::ItemId rewardItem_ = Game::ItemId::COUNT;
     uint8_t rewardAmount_ = 1;
+    uint8_t rowCount_ = Game::MarketShop::ROW_COUNT + 1;
     const char* error_ = nullptr;
     const char* greet_ = MarketShopText::GREET;
     mutable TextBlock bodyText_;
@@ -216,7 +221,7 @@ private:
     static Rect wide() { return {16, 394, 336, 44}; }
     static Rect menuRow(int index) { return {14, 246 + index * 80, 340, 80}; }
     static Rect adviceRow(int index) { return {14, 230 + index * 64, 340, 64}; }
-    static constexpr int maxScroll() { return Game::MarketShop::ROW_COUNT * ROW_H - (LIST_BOTTOM - LIST_TOP); }
+    int maxScroll() const { return rowCount_ * ROW_H - (LIST_BOTTOM - LIST_TOP); }
     bool listDrag(const Platform::IInputDevice::TouchEvent& e) {
         return scrollMotion_.touch(e, {10, LIST_TOP, 348, LIST_BOTTOM - LIST_TOP},
                                    maxScroll(), scroll_, tap_);
@@ -256,8 +261,8 @@ private:
         if (x >= 0 && x < W && y >= 0 && y < PANEL_Y) return OUTSIDE;
         if (page_ == Page::SHELF) {
             if (y < LIST_TOP || y >= LIST_BOTTOM) return -1;
-            for (int i = 0; i < Game::MarketShop::ROW_COUNT; ++i)
-                if (row(i).contains(x, y) && s.marketSeason.stock[i] &&
+            for (int i = 0; i < Game::MarketShop::rowCount(s); ++i)
+                if (row(i).contains(x, y) && Game::MarketShop::stock(s,uint8_t(i)) &&
                     (i == Game::MarketShop::BOX || Game::MarketShop::item(s, uint8_t(i)) != Game::ItemId::COUNT)) return i;
             return -1;
         }
@@ -269,6 +274,7 @@ private:
             for (int i=0;i<3;++i) if (adviceRow(i).contains(x,y)) return ADVICE0+i;
         }
         if (page_ == Page::CONFIRM) {
+            if(slot_==Game::MarketShop::EXPANSION)return wide().contains(x,y)&&Game::MarketShop::check(s,slot_,period_)==Game::MarketShop::Result::OK?PRIMARY:-1;
             if (back().contains(x, y)) return BACK;
             return primary().contains(x, y) ? PRIMARY : -1;
         }
@@ -301,7 +307,7 @@ private:
             if (target == BACK) { error_ = nullptr; changePage(Page::SHELF); return r; }
             const auto result = Game::MarketShop::check(s, slot_, period_);
             if (result != Game::MarketShop::Result::OK) { rejected(result); return r; }
-            stockBefore_ = s.marketSeason.stock[slot_];
+            stockBefore_ = Game::MarketShop::stock(s,slot_);
             feedback_.clear(); pending_ = true; r.kind = Request::BUY; r.slot = slot_; r.period = period_; return r;
         }
         changePage(Page::SHELF); return r; // success page: back to the same shelf
@@ -384,14 +390,14 @@ private:
         const int clipLeft = std::max(left, 10), clipRight = std::min(right, 358);
         const int clipTop = std::max(top, LIST_TOP + offset()), clipBottom = std::min(bottom, LIST_BOTTOM + offset());
         c.setClipRect(clipLeft, clipTop, std::max(0, clipRight - clipLeft), std::max(0, clipBottom - clipTop));
-        for (uint8_t i = 0; i < Game::MarketShop::ROW_COUNT; ++i) {
+        for (uint8_t i = 0; i < Game::MarketShop::rowCount(s); ++i) {
             const bool box = i == Game::MarketShop::BOX;
             const Game::ItemId id = Game::MarketShop::item(s, i);
             const bool legacyEmpty = !box && id == Game::ItemId::COUNT;
             const Rect r = row(i);
-            const bool sold = legacyEmpty || !s.marketSeason.stock[i];
+            const bool sold = legacyEmpty || !Game::MarketShop::stock(s,uint8_t(i));
             if (sold) c.fillRect(r.x, r.y + offset(), r.w, r.h, off());
-            if (i + 1 < Game::MarketShop::ROW_COUNT) c.drawFastHLine(16, r.y + r.h - 1 + offset(), 336, line());
+            if (i + 1 < Game::MarketShop::rowCount(s)) c.drawFastHLine(16, r.y + r.h - 1 + offset(), 336, line());
             slotIcon(legacyEmpty ? Game::ItemId::HEART_SCALE : id, box, 44, r.y + r.h / 2);
             const char* name = legacyEmpty ? MarketShopText::RARE : box ? MarketShopText::BOX : Game::ShopService::shortName(id);
             const int textY = r.y + (r.h - 32) / 2;
@@ -407,7 +413,7 @@ private:
             }
         }
         c.setClipRect(left, top, right - left, bottom - top);
-        const int thumb = (LIST_BOTTOM - LIST_TOP) * (LIST_BOTTOM - LIST_TOP) / (Game::MarketShop::ROW_COUNT * ROW_H);
+        const int thumb = (LIST_BOTTOM - LIST_TOP) * (LIST_BOTTOM - LIST_TOP) / (Game::MarketShop::rowCount(s) * ROW_H);
         const int y = LIST_TOP + scroll_ * (LIST_BOTTOM - LIST_TOP - thumb) / maxScroll() + offset();
         c.fillRoundRect(355, y, 3, thumb, 1, line());
     }
@@ -458,7 +464,22 @@ private:
         button(wide(), MarketShopText::HOME, true);
     }
 
+    void renderExpansion(const Game::GameState& s,bool success) const {
+        const auto current=Game::StorageCapacity::capacity(s);
+        if(success){
+            icon(Game::ItemId::COMPUTER_EXPANSION,184,241);ctext(278,MarketExpansionUi::SUCCESS);
+            MarketExpansionUi::capacity(uint8_t(current-20),current,184,332+offset(),40,ink(),true);
+            button(wide(),MarketExpansionUi::LEAVE,true);return;
+        }
+        icon(Game::ItemId::COMPUTER_EXPANSION,44,244);text(80,228,Game::ShopService::shortName(Game::ItemId::COMPUTER_EXPANSION));
+        MarketExpansionUi::capacity(current,Game::StorageCapacity::nextCapacity(s),184,319+offset(),40,ink());
+        if(error_)ctext(282,error_,16,red());
+        char label[32];std::snprintf(label,sizeof(label),MarketShopText::BUY,Game::MarketShop::priceForSlot(s,slot_));
+        button(wide(),label,true,pending_||Game::MarketShop::check(s,slot_,period_)!=Game::MarketShop::Result::OK);
+    }
+
     void renderConfirm(const Game::GameState& s, bool bought = false) const {
+        if(slot_==Game::MarketShop::EXPANSION){renderExpansion(s,false);return;}
         const Game::ItemId id = Game::MarketShop::item(s, slot_);
         const bool box = slot_ == Game::MarketShop::BOX;
         const char* name = box ? MarketShopText::BOX : Game::ShopService::shortName(id);
@@ -469,7 +490,7 @@ private:
         if (box) drawBody(MarketShopText::BOX_LINE1, {24, 282, 320, 66});
         else description(id, 282);
         char line[64];
-        std::snprintf(line, sizeof(line), MarketShopText::STOCK, bought ? stockBefore_ : s.marketSeason.stock[slot_]);
+        std::snprintf(line, sizeof(line), MarketShopText::STOCK, bought ? stockBefore_ : Game::MarketShop::stock(s,slot_));
         ctext(354, line);
         const auto r = bought ? Game::MarketShop::Result::OK : Game::MarketShop::check(s, slot_, period_);
         char why[64]; why[0] = 0;
@@ -486,6 +507,7 @@ private:
     }
 
     void renderResult(const Game::GameState& s) const {
+        if(slot_==Game::MarketShop::EXPANSION){renderExpansion(s,true);return;}
         const Game::ItemId id = rewardItem_ == Game::ItemId::COUNT ? Game::MarketShop::item(s, slot_) : rewardItem_;
         if (slot_ == Game::MarketShop::BOX) { icon(id,W/2,264); renderBoxText(MarketBoxPerformance::OPEN_MS); return; }
         icon(id, W / 2, 246);

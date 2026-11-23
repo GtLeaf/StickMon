@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "ui/stick/ComputerUi.h"
 #include <cstdio>
 #include "core/UiStrings.h"
@@ -91,7 +92,7 @@ void ComputerUi::render() {
         if (i == 1) {
             char countBuf[16];
             snprintf(countBuf, sizeof(countBuf), Ui::Computer::STORAGE_COUNT_FMT,
-                     host.pageState().storageCount);
+                     host.pageState().storageCount, Game::StorageCapacity::capacity(host.pageState()));
             PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(countBuf) - 12, y, countBuf,
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);

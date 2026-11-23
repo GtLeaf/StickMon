@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "ui/compact_touch/ComputerUi.h"
 
 #include "ui/PageProfile.h"
@@ -59,7 +60,7 @@ void ComputerUi::render() {
         PixelRenderer::text(rect.x + 16, rect.y + 29, i==2?Ui::Photo::ALBUM:Ui::Computer::ITEMS[i], 0xffff);
         if (i == 1) {
             char value[12];
-            std::snprintf(value, sizeof(value), Ui::Computer::STORAGE_COUNT_FMT, host.pageState().storageCount);
+            std::snprintf(value, sizeof(value), Ui::Computer::STORAGE_COUNT_FMT, host.pageState().storageCount, Game::StorageCapacity::capacity(host.pageState()));
             PixelRenderer::text(Ui::Page::WIDTH - 18 - textPixelWidth(value), rect.y + 29, value, 0x77b6);
         } else if(i==2){
             char value[12];std::snprintf(value,sizeof(value),"%u/%u",host.computerPhotoCount(),Photos::CAPACITY);

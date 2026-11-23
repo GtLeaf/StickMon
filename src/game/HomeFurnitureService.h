@@ -24,12 +24,18 @@ inline Result setPlaced(GameState& s,uint16_t id,bool place){
     if(place)s.room.placedFurniture|=bit(id);else s.room.placedFurniture&=uint16_t(~bit(id));
     return Result::OK;
 }
+inline uint16_t previewMask(const GameState& s,uint16_t id,bool place){
+    uint16_t mask=visibleMask(s);const auto* selected=entry(id);
+    if(!selected||!owned(s,id))return mask;
+    if(place)for(const auto& other:CATALOG)if(other.slot==selected->slot)mask&=uint16_t(~bit(other.id));
+    if(place)mask|=bit(id);else mask&=uint16_t(~bit(id));return mask;
+}
 template<class Save> bool commit(GameState& s,uint16_t id,bool place,Save save){
-    const auto before=s;const auto result=setPlaced(s,id,place);
+    const auto before=s.room.placedFurniture;const auto result=setPlaced(s,id,place);
     if(result==Result::ALREADY)return true;
     if(result!=Result::OK)return false;
     if(save())return true;
-    s=before;
+    s.room.placedFurniture=before;
     return false;
 }
 }

@@ -958,7 +958,7 @@ static constexpr const char* META="%s · 第%u天";
 }
 namespace Computer {
 static constexpr const char* STORAGE_EMPTY = "通讯录为空";
-static constexpr const char* STORAGE_COUNT_FMT = "%u/20";
+static constexpr const char* STORAGE_COUNT_FMT = "%u/%u";
 static constexpr const char* ITEMS[] = {
     Ui::SOCIAL,
     Ui::STORAGE,

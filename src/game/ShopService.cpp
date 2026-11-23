@@ -187,6 +187,7 @@ uint16_t sellPrice(ItemId item) {
 }
 
 const char* shortName(ItemId item) {
+    if (item == ItemId::COMPUTER_EXPANSION) return "电脑扩容卡";
     if (const auto* entry = MarketItemCatalog::find(item)) return entry->name;
 #if STICKMON_EXTERNAL_CONTENT
     const auto* p=ItemCatalog::find(item);return p ? p->name : Ui::Amoled::ITEM;
@@ -199,6 +200,7 @@ const char* shortName(ItemId item) {
 }
 
 const char* shortDescription(ItemId item) {
+    if (item == ItemId::COMPUTER_EXPANSION) return "增加20个伙伴位置";
     if (item == ItemId::HEART_SCALE) return Ui::Bag::HEART_SCALE_DESC;
     if (const auto* entry = MarketItemCatalog::find(item)) return entry->description;
 #if STICKMON_EXTERNAL_CONTENT

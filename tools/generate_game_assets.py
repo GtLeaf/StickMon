@@ -386,6 +386,7 @@ MARKET_ITEMS = [
     ("MARKET_ITEM_ORAN_BERRY", "oran_berry.png"),
     ("MARKET_ITEM_SITRUS_BERRY", "sitrus_berry.png"),
     ("MARKET_ITEM_LUM_BERRY", "lum_berry.png"),
+    ("MARKET_ITEM_COMPUTER_EXPANSION", "computer_expansion.png"),
 ]
 KIND_ORDER.extend(kind for kind, _filename in MARKET_ITEMS)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}

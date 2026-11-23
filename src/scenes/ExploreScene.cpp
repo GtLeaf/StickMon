@@ -4072,7 +4072,8 @@ void ExploreScene::updateMarketStall(uint32_t nowMs) {
     const bool active = !Platform::display().locked() && !market_->paused() && !market_->exiting() && !engine.sceneFadeActive();
     if (marketServicePending_ && market_->conversationReady() && active) {
         auto& state = engine.gameState();
-        const auto before = state;
+        std::unique_ptr<Game::GameState> before(new (std::nothrow) Game::GameState(state));
+        if(!before){resetMarketStall();market_->endConversation();marketUi_.cancel();return;}
         const bool tutor=marketServiceSpecies_==Game::MarketTutor::STALL_SPECIES;
         const bool care=marketServiceSpecies_==Game::MarketCare::STALL_SPECIES;
         if(care&&!BuildConfig::DEBUG_FEATURES){resetMarketStall();market_->endConversation();return;}
@@ -4082,7 +4083,7 @@ void ExploreScene::updateMarketStall(uint32_t nowMs) {
         const bool changed=care?false:tutor?Game::MarketTutor::ensurePeriod(state):Game::MarketShop::ensurePeriod(state);
         const auto gift=tutor?Game::MarketWelcome::grant(state):Game::MarketWelcome::Result::ALREADY;
         const bool saved=(!changed&&gift!=Game::MarketWelcome::Result::GRANTED)||engine.saveNow();
-        if (!saved) state=before;
+        if (!saved) state=*before;
         marketUi_.cancel();market_->setDirection(-1);
         if(care)marketCareUi_.open(state);
         else if(tutor){

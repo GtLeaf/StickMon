@@ -1,3 +1,4 @@
+#include "core/SaveManager.h"
 #include "OtaRuntime.h"
 #include "OtaBuild.h"
 #include "OtaSaveCompatibility.h"
@@ -118,21 +119,8 @@ bool resourcesHealthy() {
     }
     return true;
 }
-bool saveHealthy() {
-    auto snapshot = std::make_unique<SaveCodec::Snapshot>();
-    uint8_t bytes[SaveCodec::MAX_ENCODED_BYTES];
-    bool found = false, valid = false;
-    for (auto key : {"state_a", "state_b"}) {
-        size_t size = Platform::blobs().blobSize("stickmon", key);
-        if (!size) continue;
-        found = true;
-        if (size <= sizeof(bytes) && Platform::blobs().readBlob("stickmon", key, bytes, size)) {
-            valid |= SaveCodec::decode(bytes, size, *snapshot);
-        }
-    }
-    // The first OTA baseline always writes a modern snapshot before restarting.
-    return valid || (!found && !Platform::blobs().blobSize("stickmon", "state"));
-}
+bool saveHealthy() { SaveManager verifier;return verifier.snapshotHealthy(); }
+
 bool https(const std::string& url) {
     return url.size() < 2048 && url.rfind("https://", 0) == 0 &&
            url.find_first_of("\r\n") == std::string::npos;

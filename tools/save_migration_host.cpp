@@ -119,8 +119,19 @@ struct LegacyRecord {
     View view;
 };
 
+static void frozenStateBytes(void* output,const Game::GameState& current,size_t length){
+    Game::LegacyGameState old{};
+    const auto copyPart=[&](size_t source,size_t destination,size_t count){std::memcpy(reinterpret_cast<uint8_t*>(&old)+destination,reinterpret_cast<const uint8_t*>(&current)+source,count);};
+    using Old=Game::LegacyGameState;using Now=Game::GameState;
+    copyPart(0,0,offsetof(Old,bag));
+    copyPart(offsetof(Now,bag),offsetof(Old,bag),offsetof(Old,careRewards)-offsetof(Old,bag));
+    copyPart(offsetof(Now,careRewards),offsetof(Old,careRewards),sizeof(Old::careRewards));
+    copyPart(offsetof(Now,marketTutor),offsetof(Old,marketTutor),2540-offsetof(Old,marketTutor));
+    assert(length<=2540);std::memcpy(output,&old,length);
+}
+
 void makeLegacyState(uint8_t stateBytes[1560], uint16_t version) {
-    Game::GameState state;
+    Game::LegacyGameState state;
     state.version = version;
     state.settings.reservedAudioSetting = 1; // Legacy saves could enable voice calling.
     state.settings.volume = 66;
@@ -457,7 +468,7 @@ void verifyV4CareMigration() {
             original.version = format == 1 ? 3 : 4;
             legacy.magic = SAVE_RECORD_MAGIC;
             legacy.version = original.version;
-            std::memcpy(legacy.stateBytes, &original, 1572);
+            frozenStateBytes(legacy.stateBytes,original,1572);
             const uint16_t checksum = checksumBytes(legacy.stateBytes, 1572, 6);
             std::memcpy(legacy.stateBytes + 6, &checksum, 2);
             assert(Platform::blobs().writeBlob("stickmon", "state", &legacy, sizeof(legacy)));
@@ -710,7 +721,7 @@ void verifyRawV8ReservedBoxBytes() {
         original.marketCare.used = 1;
         original.marketCare.served[0].ivPacked = 123;
         original.marketCare.served[0].metAt = 456;
-        std::memcpy(raw.stateBytes, &original, sizeof(raw.stateBytes));
+        frozenStateBytes(raw.stateBytes,original,sizeof(raw.stateBytes));
         const uint16_t crc = checksumBytes(raw.stateBytes, sizeof(raw.stateBytes), 6);
         std::memcpy(raw.stateBytes + 6, &crc, 2);
         const auto first = legacyViewV1();
@@ -826,7 +837,7 @@ void verifySchema8AndRawV9SupplyDefaults() {
                 ViewV2 view{};
             } raw{};
             static_assert(sizeof(raw) == 2628);
-            std::memcpy(raw.stateBytes, &original, sizeof(raw.stateBytes));
+            frozenStateBytes(raw.stateBytes,original,sizeof(raw.stateBytes));
             const uint16_t crc = checksumBytes(raw.stateBytes, sizeof(raw.stateBytes), 6);
             std::memcpy(raw.stateBytes + 6, &crc, 2);
             std::memcpy(&raw.view, &first, sizeof(first));
@@ -886,7 +897,7 @@ void verifyV10FriendshipPityMigration(DesktopPlatform& desktop) {
                 ViewV2 view{};
             } raw{};
             static_assert(sizeof(raw) == 2632);
-            std::memcpy(raw.stateBytes, &original, sizeof(raw.stateBytes));
+            frozenStateBytes(raw.stateBytes,original,sizeof(raw.stateBytes));
             std::memcpy(raw.stateBytes + 1518, counters, sizeof(counters));
             const uint16_t crc = checksumBytes(raw.stateBytes, sizeof(raw.stateBytes), 6);
             std::memcpy(raw.stateBytes + 6, &crc, 2);
@@ -914,7 +925,7 @@ void verifyV10FriendshipPityMigration(DesktopPlatform& desktop) {
         bool normalized = false;
         assert(manager.load(loaded, view, &normalized) && normalized);
         const auto& pity = loaded.friendshipPity;
-        assert(loaded.version == 11 && loaded.coins == 8765);
+        assert(loaded.version == Game::SAVE_VERSION && loaded.coins == 8765);
         assert(loaded.marketSupply.pendingAdvice == 2);
         assert(pity.entries[0].speciesId == 151 && pity.entries[0].failures == 2);
         assert(pity.entries[1].speciesId == 380 && pity.entries[1].failures == 4);

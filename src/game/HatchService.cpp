@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <new>
 
 #include "game/CareTicker.h"
 #include "game/MonsterFactory.h"
@@ -9,7 +10,7 @@
 namespace Game::HatchService {
 
 void initializeNewGame(GameState& state) {
-    state = GameState{};
+    new (&state) GameState{};
     state.teamCount = 0;
     state.bag.potion = 0;
     state.bag.candy = 0;
