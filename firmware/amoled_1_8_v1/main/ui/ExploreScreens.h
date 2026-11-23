@@ -44,7 +44,7 @@ void renderExploreRouteScreen(Canvas565& canvas,
                               uint16_t rowBegin = 0,
                               uint16_t rowEnd = AmoledUi::HEIGHT);
 bool exploreRouteBackAt(int x, int y);
-bool exploreRouteBagAt(int x, int y);
+bool exploreRouteCameraAt(int x, int y);
 bool exploreRouteMenuAt(int x, int y);
 int exploreRouteExitChoiceAt(int x, int y);
 bool exploreRouteMapAt(int x, int y);

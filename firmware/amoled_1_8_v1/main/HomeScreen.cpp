@@ -727,7 +727,7 @@ void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
         bool roomDrawn = RoomRenderer::drawViewport(
             0, HOME_ROOM_TOP, AmoledUi::WIDTH, HOME_ROOM_HEIGHT,
             model.cameraX, model.cameraY, model.night,
-            AmoledUi::RESOURCE_SCALE,model.placedFurniture);
+            AmoledUi::RESOURCE_SCALE, model.placedFurniture, model.wallpaper);
         if (!roomDrawn) {
             canvas.fillRect((0), (HEADER_HEIGHT), (AmoledUi::WIDTH), (200), rgb(218, 204, 173));
             canvas.fillRect((0), (248), (AmoledUi::WIDTH), (96), rgb(122, 86, 68));
@@ -937,7 +937,7 @@ AmoledUi::Rect homeWallFrameBounds(int cameraX, int cameraY) {
     constexpr int scale = AmoledUi::RESOURCE_SCALE;
     constexpr int size = FurnitureArt::FRAME_WORLD_SIZE * scale;
     return {(FurnitureArt::FRAME_WORLD_X - cameraX) * scale,
-            HOME_ROOM_TOP + (room.roomY() + FurnitureArt::FRAME_ART_Y - cameraY) * scale,
+            HOME_ROOM_TOP + (room.roomY() - cameraY) * scale + FurnitureArt::frameTop(room.artScale(), scale),
             size, size + size / 3};
 }
 

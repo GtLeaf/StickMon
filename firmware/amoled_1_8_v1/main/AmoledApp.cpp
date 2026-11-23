@@ -39,6 +39,7 @@
 #include "game/GameRandom.h"
 #include "game/HatchService.h"
 #include "game/HomeCare.h"
+#include "game/MarketWorkshopService.h"
 #include "game/HomeHud.h"
 #include "game/ItemInventory.h"
 #include "game/HomeChase.h"
@@ -1350,7 +1351,14 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         if (marketServiceActive() || marketTutorPending_) {
             bool scrollOnly = false;
             if (marketWorkshopUi_.active()) {
+                const bool movingStrip = type == Type::MOVE &&
+                    marketWorkshopUi_.page() == Ui::MarketWorkshopUi::Page::WALLPAPER;
+                const int previousOffset = marketWorkshopUi_.swatchOffset();
                 handleMarketWorkshopTouch(touch);
+                if (movingStrip) {
+                    if (previousOffset != marketWorkshopUi_.swatchOffset()) marketListDirty_ = true;
+                    return;
+                }
             } else if (marketTutorUi_.active()) {
                 handleMarketTutorTouch(touch);
                 scrollOnly = marketTutorUi_.active() && marketTutorUi_.scrollOnlyChange();
@@ -2249,9 +2257,8 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             requestRenderRows(HOME_HEADER_HEIGHT, 448);
             return;
         }
-        if (exploreRouteBagAt(x, y)) {
-            pauseExploreRoute(nowMs);
-            openItemScene(AppSceneFlow::Scene::BAG);
+        if (exploreRouteCameraAt(x, y)) {
+            openPhotoCamera(nowMs);
             return;
         }
         if (exploreRouteMenuAt(x, y)) {
@@ -3068,7 +3075,12 @@ void AmoledApp::update(uint32_t nowMs) {
             const int32_t elapsed=static_cast<int32_t>(nowMs-marketTutorClockMs_);
             const uint32_t delta=active&&elapsed>0?uint32_t(elapsed):0;
             if(elapsed>=0||!active)marketTutorClockMs_=nowMs;
-            if(marketWorkshopUi_.update(delta))changed=true;
+            const int previousOffset = marketWorkshopUi_.swatchOffset();
+            if (marketWorkshopUi_.update(delta)) {
+                if (marketWorkshopUi_.page() == Ui::MarketWorkshopUi::Page::WALLPAPER &&
+                    previousOffset != marketWorkshopUi_.swatchOffset()) listChanged = true;
+                else changed = true;
+            }
             if(active)playMarketFeedback(marketWorkshopUi_);
             if(!marketWorkshopUi_.active())closeMarketTutor();
         }
@@ -6750,6 +6762,7 @@ void AmoledApp::requestRenderRect(int left, int top, int right, int bottom) {
 
 bool AmoledApp::marketListRows(int& top, int& bottom) const {
     if (displayLocked || sceneFadeActive() || externalSceneFade) return false;
+    if (marketWorkshopUi_.active()) return marketWorkshopUi_.scrollRows(top, bottom);
     if (marketTutorUi_.active()) return marketTutorUi_.scrollRows(top, bottom);
     if (marketShopUi_.active()) return marketShopUi_.scrollRows(top, bottom);
     return marketCareUi_.active() && marketCareUi_.scrollRows(top, bottom);
@@ -6808,7 +6821,8 @@ float AmoledApp::gameSpeed() const {
 }
 
 void AmoledApp::fillHomePetModel(HomeViewModel& model) const {
-    model.placedFurniture=Game::HomeFurniture::visibleMask(gameState);
+    model.placedFurniture = Game::HomeFurniture::visibleMask(gameState);
+    model.wallpaper = Game::MarketWorkshop::equippedWallpaper(gameState);
     const auto homeSnapshot = homeRuntime.renderSnapshot();
     model.speciesId = gameState.team[0].speciesId;
     model.petCenterX = static_cast<int16_t>(worldToScreenX(
@@ -6876,7 +6890,16 @@ void AmoledApp::render(Canvas565& canvas) const {
     const auto& route = exploreSession_.state();
     renderCaches_.retainForScene(sceneFlow.current());
     if(sceneFlow.current()==AppSceneFlow::Scene::MARKET&&market_&&marketWorkshopUi_.active()){
-        Ui::MarketView::render(*market_,marketViewport(),market_->timeMs(),gameState.gameMinutesTotal);
+        if (marketListFrame()) {
+            const ListRowsClip clip(PixelRenderer::canvas(), dirtyRowBegin, dirtyRowEnd);
+            marketWorkshopUi_.render(gameState, &marketCoinMotion_);
+            return;
+        }
+        if (marketWorkshopUi_.page() != Ui::MarketWorkshopUi::Page::WALLPAPER) {
+            auto view = marketViewport();
+            view.cameraOffsetY = marketWorkshopUi_.panelShift(Ui::MarketView::stallCameraOffset(*market_, view, Ui::MarketShopUi::PANEL_Y));
+            Ui::MarketView::render(*market_,view,market_->timeMs(),gameState.gameMinutesTotal);
+        }
         marketWorkshopUi_.render(gameState,&marketCoinMotion_);
         UiCommon::drawSceneFadeOverlay(canvas,externalSceneFade?0:exploreTransition_.fade().alpha(),0,AmoledUi::HEIGHT);
         return;
@@ -6935,7 +6958,8 @@ void AmoledApp::render(Canvas565& canvas) const {
         return;
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
-        const auto model = hatchController_.model(gameState.gameMinutesTotal, toast);
+        auto model = hatchController_.model(gameState.gameMinutesTotal, toast);
+        model.wallpaper = Game::MarketWorkshop::equippedWallpaper(gameState);
         renderHatchScreen(canvas, model, dirtyRowBegin, dirtyRowEnd,
                           &hatchController_.eggHitBounds());
         return;
@@ -9416,6 +9440,14 @@ void AmoledApp::handleMarketWorkshopTouch(const Platform::IInputDevice::TouchEve
         if(result.result==Game::MarketWorkshop::Result::ALREADY)marketWorkshopUi_.already();
         else marketWorkshopUi_.committed(result.status==Game::MarketTransaction::Status::COMMITTED);
         marketTutorClockMs_=Platform::clock().millis();
+    } else if (request == Ui::MarketWorkshopUi::Request::APPLY_WALLPAPER) {
+        using namespace Game::MarketWorkshop;
+        const Wallpaper paper = marketWorkshopUi_.selectedWallpaper();
+        const auto result = commitMarketTransaction(touch.timestampMs, [paper](Game::GameState& state) {
+            return applyWallpaper(state, paper);
+        });
+        marketWorkshopUi_.wallpaperCommitted(result.status == Game::MarketTransaction::Status::COMMITTED);
+        marketTutorClockMs_ = Platform::clock().millis();
     }
     playMarketFeedback(marketWorkshopUi_);
     if(!marketWorkshopUi_.active())closeMarketTutor();

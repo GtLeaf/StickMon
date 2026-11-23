@@ -3,6 +3,8 @@
 #include "game/MonsterFactory.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "market_dialogue_fixture.h"
+#include "home_host_power.h"
+#include "market_workshop_wallpaper_journey.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -46,7 +48,7 @@ struct AmoledAppTestAccess {
         const auto advance=[&](int ms){while(ms>0){int step=std::min(ms,66);t+=step;app.update(t);ms-=step;}};
         const auto event=[&](TouchEventType type,int x=184,int y=340){TouchEvent e{};e.x=x;e.y=y;e.type=type;e.timestampMs=(t+=40);app.handleTouch(e);};
         const auto tap=[&](int x=184,int y=340){event(TouchEventType::DOWN,x,y);event(TouchEventType::UP,x,y);};
-        const auto shot=[&](const char* name){app.render(PixelRenderer::canvas());capture(name);};
+        const auto shot=[&](const char* name){app.forceFullRender();app.render(PixelRenderer::canvas());capture(name);};
         assert(app.startMarket(t));advance(4000);
         const auto open=[&](){
             int keeper=-1;for(int i=0;i<app.market_->data().residentCount;++i)if(app.market_->actor(i).species==115)keeper=i;
@@ -67,17 +69,83 @@ struct AmoledAppTestAccess {
         assert(loaded.room.ownedFurniture==0x4001&&loaded.room.placedFurniture==0x4000&&loaded.coins==0);
         event(TouchEventType::DOWN);app.cancelTouch();event(TouchEventType::UP);assert(app.marketWorkshopUi_.page()==P::REWARD);
         event(TouchEventType::DOWN);app.setDisplayLocked(true);advance(500);app.setDisplayLocked(false);event(TouchEventType::UP);assert(app.marketWorkshopUi_.page()==P::REWARD);
-        tap(184,80);assert(!app.marketServiceActive()&&!app.market_->conversing());shot("amoled-workshop-06-dismissed");
-        s=loaded;open();assert(app.marketWorkshopUi_.dialogueIndex()==2);tap();assert(!app.marketServiceActive()&&!app.market_->conversing());
-        app.closeMarket(t);s.gameMinutesTotal=10*1440;assert(app.startMarket(t));advance(4000);open();assert(app.marketWorkshopUi_.dialogueIndex()==2);
-        tap();assert(!app.market_->conversing());app.closeMarket(t);
-        std::puts("workshop actual AMOLED: service entry, three dialogues, failed/slow save, old-UP/lock/cancel, fresh-tap dismissal, reload and later period once-only ownership OK");
+        tap(184,80);advance(800);
+        assert(app.marketWorkshopUi_.page()==P::MENU&&app.market_->conversing());
+        tap(180,100);advance(800);
+        assert(!app.marketServiceActive()&&!app.market_->conversing());
+
+        // A pre-wallpaper save with only the first-visit gift goes straight to the stall.
+        s=loaded;open();assert(app.marketWorkshopUi_.page()==P::MENU);
+        const auto setHour=[&](int hour){
+            s.gameMinutesTotal=hour*60;
+            app.gameClock.set(t,s.gameMinutesTotal);
+        };
+#ifdef STICKMON_TEST_WALLPAPER_CATALOG
+        bool checkedDragFrame = false;
+        const auto verifyDragFrame = [&](int middleX, int y) {
+            auto& canvas = PixelRenderer::canvas();
+            advance(66);
+            app.forceFullRender();
+            app.render(canvas);
+            app.markRendered();
+            const auto selection = app.marketWorkshopUi_.selectedWallpaper();
+            const auto initialOffset = app.marketWorkshopUi_.swatchOffset();
+            event(TouchEventType::MOVE, middleX, y);
+            assert(app.marketWorkshopUi_.swatchOffset() != initialOffset);
+            assert(app.marketWorkshopUi_.selectedWallpaper() == selection && !app.needsRender());
+            advance(40);
+            const auto row = Ui::MarketWorkshopView{}.selectionRow();
+            assert(app.marketListFrame() && app.renderRowBegin() == row.y && app.renderRowEnd() == row.y + row.h);
+            app.render(canvas);
+            const auto count = size_t(canvas.physicalWidth()) * canvas.physicalHeight();
+            const std::vector<uint16_t> partial(canvas.rawPixels(), canvas.rawPixels() + count);
+            app.markRendered();
+            app.forceFullRender();
+            app.render(canvas);
+            assert(std::equal(partial.begin(), partial.end(), canvas.rawPixels()));
+            app.markRendered();
+            checkedDragFrame = true;
+        };
+#endif
+        WorkshopTest::wallpaperJourney(false,app.marketWorkshopUi_,s,tap,
+            [&](int x,int y,int endX,int endY,auto duringMove){
+                event(TouchEventType::DOWN,x,y);
+#ifdef STICKMON_TEST_WALLPAPER_CATALOG
+                if (!checkedDragFrame) verifyDragFrame((x + endX)/2, y);
+#endif
+                event(TouchEventType::MOVE,endX,endY);duringMove();
+                event(TouchEventType::UP,endX,endY);
+            },shot,setHour,advance,[&](){app.marketCoinMotion_.reset(s.coins);return app.saveState();},
+            [&](bool fail){blobs.fail=fail?"snapshots":nullptr;});
+#ifdef STICKMON_TEST_WALLPAPER_CATALOG
+        assert(checkedDragFrame);
+#endif
+        tap(180,100);advance(800);assert(!app.market_->conversing());app.closeMarket(t);
+        assert(saves.load(loaded,v));s=loaded;
+        app.sceneFlow.enter(AppSceneFlow::Scene::HOME);
+        setHour(12);shot(WorkshopTest::homeDayShot);
+#ifdef STICKMON_TEST_WALLPAPER_CATALOG
+        WorkshopTest::expectFixtureWall(true);
+#endif
+        const auto day=WorkshopTest::roomBand(100,130);
+        setHour(22);shot(WorkshopTest::homeNightShot);
+        assert(WorkshopTest::roomBand(100,130)!=day);
+        s.wallpaperId=0;setHour(12);shot("wallpaper-12-home-original");
+        assert(WorkshopTest::roomBand(100,130)!=day);
+#ifdef STICKMON_TEST_WALLPAPER_CATALOG
+        WorkshopTest::expectFixtureWall(false);
+#endif
+
+        s=loaded;s.gameMinutesTotal=10*1440;app.gameClock.set(t,s.gameMinutesTotal);
+        assert(app.startMarket(t));advance(4000);open();assert(app.marketWorkshopUi_.page()==P::MENU);
+        tap(180,100);advance(800);assert(!app.market_->conversing());app.closeMarket(t);
+        std::puts("AMOLED workshop gift, old save, wallpaper previews, durable purchase/equip, rollback and home day/night OK");
     }
 };
 }
 int main(int argc,char** argv) {
-    assert(argc==3);output=argv[2];DesktopPlatform desktop(argv[1]);auto& base=desktop.serviceBundle();FaultStore blobs(base.blobs);
-    Platform::Services services{base.lifecycle,base.clock,base.logger,base.input,base.display,base.audio,base.imu,base.power,blobs,base.resources,base.memory,base.peers};
+    assert(argc==3);output=argv[2];DesktopPlatform desktop(argv[1]);auto& base=desktop.serviceBundle();FaultStore blobs(base.blobs);HomePower power(base.power);
+    Platform::Services services{base.lifecycle,base.clock,base.logger,base.input,base.display,base.audio,base.imu,power,blobs,base.resources,base.memory,base.peers};
     Platform::bind(services);assert(desktop.begin());assert(Platform::resources().mount());assert(GameAssets::begin());assert(FontResource::ins().begin());
     std::vector<uint16_t> pixels(368*448);auto& c=PixelRenderer::canvas();c.attach({pixels.data(),368,448,false});c.setCoordinateScale(1);c.setLayoutScale(1);c.setAssetScale(1);c.setNativeText(true);
     AmoledV1::AmoledApp app;app.begin(0);AmoledV1::AmoledAppTestAccess::run(app,blobs);

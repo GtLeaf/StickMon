@@ -4,6 +4,7 @@
 #include "core/TouchTap.h"
 #include "core/UiStrings.h"
 #include "game/HomeFurnitureService.h"
+#include "game/MarketWorkshopService.h"
 #include "presentation/FurnitureArt.h"
 #include "presentation/TextBlock.h"
 #include "ui/common/MarketListScroll.h"
@@ -88,7 +89,7 @@ public:
             const int max=maximum(s);if(max>0){const int h=layout_.round?170:layout_.height-bounds.y-24;const int thumb=std::max(24,h*bounds.h/(max+bounds.h));const int x=layout_.width-listLeft()-3;c.fillRoundRect(x,bounds.y+8,3,h,1,color(32,45,50));c.fillRoundRect(x,bounds.y+8+(h-thumb)*offset_/max,3,thumb,1,color(126,175,175));}
         }else{
             const int top=layout_.round?60:80,height=layout_.round?184:224;
-            const bool shown=RoomRenderer::drawPreview(layout_.round?40:16,top,layout_.round?280:336,height,false,Game::HomeFurniture::previewMask(s,selected_,draftPlaced_));
+            const bool shown=RoomRenderer::drawPreview(layout_.round?40:16,top,layout_.round?280:336,height,false,Game::HomeFurniture::previewMask(s,selected_,draftPlaced_), nullptr, Game::MarketWorkshop::equippedWallpaper(s));
             if(!shown)label(HomeLibraryText::NO_PREVIEW,48,top+64,layout_.width-96,24,color(168,184,184));
             if(error_)label(HomeLibraryText::FAILED,48,layout_.round?272:350,layout_.width-96,16,color(238,120,105));
             const auto button=actionBounds();const bool enabled=Game::HomeFurniture::owned(s,selected_);

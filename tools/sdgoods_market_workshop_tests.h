@@ -1,6 +1,8 @@
 #pragma once
 #if __has_include("ui/common/MarketWorkshopUi.h")
 #include "ui/common/MarketWorkshopUi.h"
+#include "presentation/FrameDamage.h"
+#include "market_workshop_wallpaper_journey.h"
 #include "ui/round_touch/ExploreRouteUi.h"
 #define HAS_FRAME_GIFT 1
 #endif
@@ -40,12 +42,15 @@ static void workshopControllerTests(const std::string& out){
     assert(event(Type::UP)==R::NONE&&ui.page()==P::REWARD);ui.update(60000);assert(ui.page()==P::REWARD);renderContract(ui,state);
     event(Type::DOWN);event(Type::MOVE,180,220);event(Type::UP);assert(ui.page()==P::REWARD);
     event(Type::DOWN);ui.cancelTouch();event(Type::UP);assert(ui.page()==P::REWARD);
-    tap();assert(ui.active());ui.update(180);assert(ui.active());ui.update(180);assert(!ui.active());
-    ui.open(state);ui.update(400);assert(ui.dialogueIndex()==2);
-    for(int i=0;i<8&&!ui.exiting();++i)assert(tap()==R::NONE);
-    assert(ui.exiting()&&ui.active());ui.update(180);assert(ui.active());ui.update(180);assert(!ui.active());
+    tap();ui.update(360);ui.update(360);assert(ui.page()==P::MENU);
+    renderContract(ui,state);
+    event(Type::DOWN,180,210);event(Type::UP,180,210);assert(ui.page()==P::WALLPAPER);
+    renderContract(ui,state);
+    event(Type::DOWN,110,48);event(Type::UP,110,48);assert(ui.page()==P::MENU);
+    event(Type::DOWN,180,100);event(Type::UP,180,100);ui.update(360);assert(!ui.active());
+    ui.open(state);ui.update(400);assert(ui.page()==P::MENU);
     assert(Game::MarketWorkshop::grantFrame(state)==Game::MarketWorkshop::Result::ALREADY);
-    W rectangular;rectangular.open(state);rectangular.update(400);assert(rectangular.dialogueIndex()==2);
+    W rectangular;rectangular.open(state);rectangular.update(400);assert(rectangular.page()==P::MENU);
     (void)out;
     std::puts("workshop: three dialogues, durable once-only ownership, zero coins, failed save/retry, old-UP/drag/cancel/repeat and clip/swap OK");
 #else
@@ -166,24 +171,70 @@ static void workshopJourney(DesktopPlatform& desktop,GameEngine& engine,Blobs& b
     j.advance(180);assert(scene.marketWorkshopUi_.page()==P::REWARD);
     j.event(Type::UP,180,260);assert(scene.marketWorkshopUi_.page()==P::REWARD);j.advance(5000);j.shot("workshop-05-received");
     j.event(Type::DOWN,180,260);scene.cancelTouch();j.event(Type::UP,180,260);assert(scene.marketWorkshopUi_.page()==P::REWARD);
-    const auto rewardCenter=PixelRenderer::canvas().readPixel(180,180);
-    j.tap(180,100);assert(scene.marketStallActive()&&scene.market_->conversing());
-    j.shot("workshop-reward-dismissed");
-    assert(PixelRenderer::canvas().readPixel(180,180)!=rewardCenter&&"The reward frame must disappear on tap");
-    j.advance(180);j.shot("workshop-reward-out");
-    assert(scene.marketStallActive()&&scene.market_->conversing());j.advance(180);
-    assert(!scene.marketStallActive()&&!scene.market_->conversing());j.shot("workshop-06-dismissed");
-    open();assert(scene.marketWorkshopUi_.dialogueIndex()==2);
-    for(int i=0;i<8&&!scene.marketWorkshopUi_.exiting();++i)j.tap(180,285);
-    assert(scene.marketWorkshopUi_.exiting());j.advance(180);
-    assert(scene.marketStallActive()&&scene.market_->conversing());j.shot("workshop-repeat-out");j.advance(180);
+    j.tap(180,100);j.advance(800);
+    assert(scene.marketWorkshopUi_.page()==P::MENU&&scene.market_->conversing());
+    j.tap(180,100);j.advance(800);
     assert(!scene.marketStallActive()&&!scene.market_->conversing());
-    // A fresh SaveManager decode and a later market period retain ownership.
-    SaveManager saves;assert(saves.begin());Game::GameState loaded;MainSceneViewState view{};assert(saves.load(loaded,view));
-    state=loaded;state.gameMinutesTotal+=10*1440;scene.resetMarketStall();scene.market_->endConversation();
-    scene.marketWorkshopUi_.open(state);scene.marketWorkshopUi_.update(400);assert(scene.marketWorkshopUi_.dialogueIndex()==2);
-    display.isLocked=true;j.advance(66);display.isLocked=false;assert(!scene.marketStallActive()&&state.room.ownedFurniture==0x4001);
+
+    // Reload the old gift-only state, then enter through the actual merchant again.
+    SaveManager saves;assert(saves.begin());Game::GameState loaded;MainSceneViewState view{};
+    assert(saves.load(loaded,view));state=loaded;open();assert(scene.marketWorkshopUi_.page()==P::MENU);
+    const auto initialClock=engine.gameClock;
+    const auto setHour=[&](int hour){
+        state.gameMinutesTotal=hour*60;
+        engine.gameClock.set(desktop.millis(),state.gameMinutesTotal);
+    };
+    WorkshopTest::wallpaperJourney(true,scene.marketWorkshopUi_,state,
+        [&](int x,int y){j.tap(x,y);},
+        [&](int x,int y,int endX,int endY,auto duringMove){
+            j.event(Type::DOWN,x,y);j.event(Type::MOVE,endX,endY);duringMove();j.event(Type::UP,endX,endY);
+        },[&](const char* name){j.shot(name);},setHour,[&](int ms){j.advance(ms);},
+        [&](){scene.marketCoins_.reset(state.coins);return engine.saveNow();},
+        [&](bool fail){blobs.failAll=fail;});
+    j.tap(180,100);j.advance(800);assert(!scene.market_->conversing());
+    assert(saves.load(loaded,view));state=loaded;state.gameMinutesTotal+=10*1440;
+    open();assert(scene.marketWorkshopUi_.page()==P::MENU);
+    // Use the photo just taken in this market as the existing wall-frame binding.
+    std::array<uint16_t,Photos::THUMB_PIXELS> thumbnail;
+    assert(photos.loadThumbnail(photos.entry(0),thumbnail.data())==Photos::Result::OK);
+    assert(photos.writeFrameBinding(photos.entry(0).id)==Photos::Result::OK);
+    state.room.placedFurniture|=Game::MarketWorkshop::PHOTO_FRAME;
+    j.tap(180,210);j.shot("wallpaper-09b-bound-photo");
+    const auto photoCenter=thumbnail[22*Photos::THUMB_WIDTH+22];
+    assert(canvas.readPixel(254,122)==photoCenter&&"The workshop must load the bound photo on preview entry");
+    const auto firstSwatch=Ui::MarketWorkshopView{360,360,true}.swatch(0,0);
+    j.tap(firstSwatch.x+firstSwatch.w/2,240);j.shot("wallpaper-09c-original-bound-photo");
+    assert(canvas.readPixel(254,122)==photoCenter);
+    display.isLocked=true;j.advance(66);display.isLocked=false;
+    assert(!scene.marketStallActive()&&state.room.ownedFurniture==0x4001);
     menuTap(3);assert(scene.market_->exiting());
-    scene.onExit();state=original;assert(engine.saveNow());
-    std::puts("workshop actual round engine: reusable menu, team/bag, clean market camera/save/exit, menu hidden, dialogue/reward exits, failed/slow save and lock/reload OK");
+    state.tutorialFlags=0xff;
+    setHour(12);
+    engine.switchScene(SceneID::MAIN,false);
+    // Let the room entrance settle before comparing static decoration.
+    for(int i=0;i<30;++i){
+        desktop.advanceMs(66);
+        engine.currentScene->update(desktop.millis(),0.066f);
+    }
+    const auto homeShot=[&](const char* name){
+        auto& home=*engine.currentScene;
+        home.prepareSurface();assert(Ui::SceneSurface::begin(desktop.frameBuffer()));
+        FrameDamage::begin(false);home.render();Ui::SceneSurface::finish();capture(out,name);
+    };
+    setHour(12);homeShot(WorkshopTest::homeDayShot);
+#ifdef STICKMON_TEST_WALLPAPER_CATALOG
+    WorkshopTest::expectFixtureWall(true);
+#endif
+    const auto day=WorkshopTest::roomBand(120,145);
+    assert(canvas.readPixel(263,158)==photoCenter);
+    setHour(22);homeShot(WorkshopTest::homeNightShot);
+    assert(WorkshopTest::roomBand(120,145)!=day);
+    state.wallpaperId=0;setHour(12);homeShot("wallpaper-12-home-original");
+    assert(WorkshopTest::roomBand(120,145)!=day);
+#ifdef STICKMON_TEST_WALLPAPER_CATALOG
+    WorkshopTest::expectFixtureWall(false);
+#endif
+    engine.gameClock=initialClock;
+    state=original;assert(engine.saveNow());
+    std::puts("workshop actual round engine: reusable menu, team/bag, clean market camera/save/exit, menu hidden, gift, wallpaper previews, durable purchase/equip, rollback and home day/night OK");
 }

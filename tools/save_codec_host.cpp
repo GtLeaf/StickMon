@@ -36,6 +36,7 @@ Game::GameState makeState() {
     state.bag.candy = 7;
     state.bag.thunderStone = 2;
     state.bag.soap[2] = 3;
+    state.wallpaperId = 37;
     state.room.food[1] = 4;
     state.room.selectedFood = 1;
     state.room.bowlFood = 1;
@@ -166,8 +167,9 @@ void verifyRoundTrip() {
     uint32_t sequence = 0;
     assert(SaveCodec::decode(encoded, length, decoded, &sequence));
     assert(sequence == 0x12345678);
-    assert(SaveCodec::SCHEMA_VERSION == 11);
-    assert(length == 2516 - 38 + 9 + 6);
+    assert(SaveCodec::SCHEMA_VERSION == 12);
+    assert(decoded.state.wallpaperId == 37);
+    assert(length == 2516 - 38 + 9 + 7);
     assert(encoded[1456] == 0x7d && encoded[1457] == 1 && encoded[1458] == 2);
     assert(decoded.state.friendshipPity.entries[0].speciesId == 381);
     assert(decoded.state.friendshipPity.entries[1].speciesId == 151);
@@ -328,7 +330,9 @@ void verifySchema1DecodesWithDefaults() {
 }
 
 void verifyAllLegacySchemasPreservePrefix() {
-    const auto state = makeState();
+    auto state = makeState();
+    state.room.ownedFurniture = 0x4001;
+    state.room.placedFurniture = 0x1003;
     uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {};
     size_t length = 0;
     assert(SaveCodec::encode(state, makeView(), 17, encoded, sizeof(encoded), length));
@@ -346,6 +350,9 @@ void verifyAllLegacySchemasPreservePrefix() {
         SaveCodec::Snapshot decoded;
         assert(SaveCodec::decode(legacy.data(), legacy.size(), decoded));
         assert(decoded.state.version == Game::SAVE_VERSION);
+        assert(decoded.state.wallpaperId == 1);
+        assert(decoded.state.room.ownedFurniture == 0x4001);
+        assert(decoded.state.room.placedFurniture == 0x1001);
         assert(decoded.state.coins == state.coins && decoded.state.bag.candy == 7);
         assert(decoded.state.marketSupply.pendingAdvice == (schema == 9 ? 2 : 0));
         assert(decoded.state.marketSupply.stockPlan == (schema == 9 ? 4 : 0));
@@ -378,7 +385,7 @@ void verifyAllLegacySchemasPreservePrefix() {
             assert(decoded.state.marketShop.boxBought == 1);
             assert(decoded.state.marketShop.boxRoll == 99);
             const size_t extensionsRemoved = schema == 7 ? 42 : schema == 8 ? 3 : 0;
-            assert(legacy.size() + extensionsRemoved == length + 38 - 9 - 6);
+            assert(legacy.size() + extensionsRemoved == length + 38 - 9 - 7);
         }
         assert(decoded.view.secondary.foodRetryRemainingMs == 9999);
     }

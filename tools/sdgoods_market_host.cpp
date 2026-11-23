@@ -15,6 +15,7 @@
 #include "scenes/ExploreScene.h"
 #undef private
 #include "market_dialogue_fixture.h"
+#include "home_host_power.h"
 #include "core/SaveManager.h"
 #include "core/FontResource.h"
 #include "core/ContentStore.h"
@@ -237,11 +238,11 @@ static void journeyTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& blob
 #include "sdgoods_explore_card_tests.h"
 
 int main(int argc,char**argv){
-    assert(argc==5);assert(std::string(argv[4])==(STICKMON_EXTERNAL_CONTENT?"external":"embedded"));DesktopPlatform desktop(argv[1]);auto services=desktop.serviceBundle();Blobs blobs(services.blobs);blobs.clock=&desktop;Display display(services.display);
+    assert(argc==5);assert(std::string(argv[4])==(STICKMON_EXTERNAL_CONTENT?"external":"embedded"));DesktopPlatform desktop(argv[1]);auto services=desktop.serviceBundle();Blobs blobs(services.blobs);blobs.clock=&desktop;Display display(services.display);HomePower power(services.power);
     std::string photoDirectory=std::string(argv[2])+"/workshop-photos.XXXXXX";
     assert(mkdtemp(photoDirectory.data()));
     Platform::PosixUserFiles photos(photoDirectory);
-    Platform::Services bundle{services.lifecycle,services.clock,services.logger,services.input,display,services.audio,services.imu,services.power,blobs,services.resources,services.memory,services.peers,&photos};
+    Platform::Services bundle{services.lifecycle,services.clock,services.logger,services.input,display,services.audio,services.imu,power,blobs,services.resources,services.memory,services.peers,&photos};
     Platform::bind(bundle);assert(desktop.begin());
 #if STICKMON_EXTERNAL_CONTENT
     assert(Platform::resources().mount());ContentStore catalog;ContentData::bind(&catalog);

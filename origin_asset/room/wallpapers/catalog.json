@@ -1,0 +1,6 @@
+[
+  {"id": 0, "name": "原木", "price": 0, "asset": null, "swatch": "swatch-original.png"},
+  {"id": 1, "name": "林间小屋", "price": 300, "asset": "forest", "swatch": "swatch-forest.png"},
+  {"id": 2, "name": "潮汐海岸", "price": 300, "asset": "coastal-tide", "swatch": "swatch-coastal-tide.png"},
+  {"id": 3, "name": "蜜桃方格", "price": 300, "asset": "peach-gingham", "swatch": "swatch-peach-gingham.png"}
+]

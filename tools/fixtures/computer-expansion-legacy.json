@@ -4,6 +4,11 @@
   "raw11": "Original2540-byte state +96-byte view +8-byte envelope. Nonzero v11 LRU record151/3 added to the frozen raw fixture and its legacy state CRC recomputed.",
   "sha256": {
     "computer-expansion-schema10.bin": "df4617300717f454017ae902115cbf88f65637956f98db82f23fc3203df46d8a",
-    "computer-expansion-raw11-pity.bin": "9c3b369a29cdc8c56efbc0a98063d5a124d29b855525538abbd099e5c1669fe2"
-  }
+    "computer-expansion-raw11-pity.bin": "9c3b369a29cdc8c56efbc0a98063d5a124d29b855525538abbd099e5c1669fe2",
+    "computer-expansion-schema11-wallpaper.bin": "6ea1e7bd09ebb8703756227b5679d4be5a23daa71ac31eee2a3828b07d5ecf35",
+    "computer-expansion-raw12-wallpaper.bin": "51e6e726256e466d772e29cb54ed217b4145d595246e19ae32b935ce571b88e0",
+    "computer-expansion-schema11-feature.bin": "9b115a6e95d2f398ffb02a189c90b333bb801c5bac4661a48927c22a83e97d22"
+  },
+  "publicWallpaperSource": "54141f7: schema11/state12 (2488-byte portable snapshot), raw2544-byte state plus104-byte envelope/view; wallpaper2,20 contacts,6543 coins.",
+  "featureExpansionSource": "cff23fb: expansion schema11/state12; capacity80,60 contacts,4321 coins, purchased opening7; saved with the original feature codec."
 }

@@ -5,6 +5,7 @@ import struct
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from font_pack import compress_font
+from wallpaper_catalog import CATALOG, load_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -55,9 +56,14 @@ def collect_chars_from_text(text):
     }
 
 
+def wallpaper_chars(catalog=CATALOG):
+    return collect_chars_from_text("".join(entry["name"] for entry in load_catalog(catalog)))
+
+
 def collect_ui_chars():
     text = (SRC / "core" / "UiStrings.h").read_text(encoding="utf-8")
     chars = collect_chars_from_text(text)
+    chars.update(wallpaper_chars())
     catalog = SRC / "game" / "MarketItemCatalog.h"
     if catalog.exists():
         chars.update(collect_chars_from_text(catalog.read_text(encoding="utf-8")))

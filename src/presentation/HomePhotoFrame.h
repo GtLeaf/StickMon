@@ -3,8 +3,7 @@
 
 #include "core/PhotoLibrary.h"
 #include "core/TouchTap.h"
-
-class Canvas565;
+#include "presentation/FurnitureArt.h"
 
 namespace Ui {
 
@@ -26,9 +25,10 @@ public:
     static constexpr int PHOTO_TOP = 116, PHOTO_HEIGHT = 112, RECT_PANEL_Y = 44;
     void render(Canvas565& canvas);
     void drawWallPhoto(Canvas565& canvas, int x, int y, int scale = 1) const;
+    const uint16_t* wallPhotoPixels() const { return wallPhotoValid_ ? wallPhoto_ : nullptr; }
 
 private:
-    static constexpr int WALL_PHOTO_SIZE = 13;
+    static constexpr int WALL_PHOTO_SIZE = FurnitureArt::WALL_PHOTO_SIZE;
     bool roundPanel_;
     Photos::Library library_;
     Photos::PixelBuffer background_, image_, pickerImages_;

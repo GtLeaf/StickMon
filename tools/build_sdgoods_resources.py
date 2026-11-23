@@ -8,12 +8,13 @@ from pathlib import Path
 import shutil
 import struct
 from generate_sdgoods_catalog import ROOT, generate
+from wallpaper_catalog import exported_wallpapers
 
 LAYOUT='sdgoods-16m-single-v1'
 ABI=1
 BANK_SIZE=9*1024*1024
 INDEX_ENTRY=struct.Struct('<160sI32s')
-EXTENSIONS={'.json','.smonsp','.smonroom','.smonfurn','.smonfx','.smonfont',
+EXTENSIONS={'.json','.smonsp','.smonroom', '.smonwall','.smonfurn','.smonfx','.smonfont',
             '.smondialogue','.smonaudio','.smoncry','.smonmenu'}
 
 def stage(output,layout='16m'):
@@ -31,7 +32,9 @@ def stage(output,layout='16m'):
             p=output/name
             if not p.is_relative_to(output) or '..' in Path(name).parts: raise ValueError('Invalid prior stage path')
             if p.is_file():p.unlink()
+    wallpapers = set(exported_wallpapers(ROOT/'data'))
     for p in sorted((ROOT/'data').rglob('*')):
+        if p.suffix == '.smonwall' and p not in wallpapers:continue
         if not p.is_file() or p.suffix not in EXTENSIONS or p.name=='ui_amoled.smonfx':continue
         relative=p.relative_to(ROOT/'data')
         dest=output/relative;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,dest)

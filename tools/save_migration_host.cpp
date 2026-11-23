@@ -947,12 +947,66 @@ void verifyV10FriendshipPityMigration(DesktopPlatform& desktop) {
     Platform::bind(originalServices);
 }
 
+void verifyV11WallpaperMigration() {
+    for (bool rawFormat : {false, true}) {
+        for (bool owned : {false, true}) {
+            for (bool placed : {false, true}) {
+                assert(Platform::blobs().clearNamespace("stickmon"));
+                Game::GameState original{};
+                original.coins = 2468;
+                original.room.ownedFurniture = owned ? 0x4003 : 0x4001;
+                original.room.placedFurniture = placed ? 0x1003 : 0x1001;
+                original.friendshipPity.entries[0] = {151, 3};
+                if (rawFormat) {
+                    struct RawV11 {
+                        uint32_t magic = SAVE_RECORD_MAGIC;
+                        uint16_t version = 11, reserved = 0;
+                        uint8_t stateBytes[2540];
+                        ViewV2 view{};
+                    } raw{};
+                    static_assert(sizeof(raw) == 2644);
+                    original.version = 11;
+                    frozenStateBytes(raw.stateBytes,original,sizeof(raw.stateBytes));
+                    const auto crc = checksumBytes(raw.stateBytes, sizeof(raw.stateBytes), 6);
+                    std::memcpy(raw.stateBytes + 6, &crc, 2);
+                    const auto first = legacyViewV1();
+                    std::memcpy(&raw.view, &first, sizeof(first));
+                    raw.view.version = 2;
+                    raw.view.checksum = checksumObject(raw.view);
+                    assert(Platform::blobs().writeBlob("stickmon", "state", &raw, sizeof(raw)));
+                } else {
+                    uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES]{};
+                    size_t size = 0;
+                    assert(SaveCodec::encode(original, {}, 9, encoded, sizeof(encoded), size));
+                    std::vector<uint8_t> legacy;
+                    assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded, size, legacy, 10));
+                    assert(Platform::blobs().writeBlob("stickmon", "state", legacy.data(), legacy.size()));
+                }
+                SaveManager saves;
+                for (int load = 0; load < 2; ++load) {
+                    Game::GameState restored{};
+                    MainSceneViewState view{};
+                    assert(saves.load(restored, view));
+                    assert(restored.wallpaperId == (placed ? 1 : 0));
+                    assert(restored.room.ownedFurniture == 0x4001);
+                    assert(restored.room.placedFurniture == 0x1001);
+                    assert(restored.coins == 2468);
+                    assert(restored.friendshipPity.entries[0].speciesId == 151);
+                    assert(restored.friendshipPity.entries[0].failures == 3);
+                    if (rawFormat) assert(view.valid && view.speciesId == legacyViewV1().speciesId);
+                }
+            }
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
     DesktopPlatform desktop(".");
     Platform::bind(desktop.serviceBundle());
     assert(Platform::blobs().initialize());
+    verifyV11WallpaperMigration();
     verifySupplyPlansAndCorruption();
     verifySchema8AndRawV9SupplyDefaults();
     verifyV10FriendshipPityMigration(desktop);

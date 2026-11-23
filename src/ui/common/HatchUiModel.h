@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "game/WallpaperCatalog.h"
 
 namespace Ui {
 struct HatchFrame {
@@ -8,6 +9,7 @@ struct HatchFrame {
     uint8_t progress = 0;
     uint16_t remainingSeconds = 0;
     bool night = false;
+    Game::MarketWorkshop::Wallpaper wallpaper = Game::MarketWorkshop::Wallpaper::ORIGINAL;
 };
 struct HatchLayout { int width, height; };
 enum class HatchAction : uint8_t { NONE, MENU, WIPE, POKE };

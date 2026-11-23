@@ -10,8 +10,10 @@ import unittest
 
 from PIL import Image, ImageChops, ImageStat
 from amoled_host import build_amoled_host
+from wallpaper_catalog_fixture import wallpaper_catalog_fixture
 import generate_room_layers as layers
 import prepare_room_background as room
+from compose_room import composite
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,10 +28,9 @@ def read565(path, size):
 
 class RoomPreviewTests(unittest.TestCase):
     def test_real_menu_resources_cache_and_visuals(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        with (tempfile.TemporaryDirectory() as temporary,
+              wallpaper_catalog_fixture(ROOT / 'data') as (resources, catalog_flags)):
             temp = Path(temporary)
-            resources = temp / 'data'
-            shutil.copytree(ROOT / 'data', resources)
             pack = resources / 'packs/dev'
             shutil.copyfile(pack / 'rooms/standard.smonroom', pack / 'rooms/legacy.smonroom')
             paths = layers.generate(output=pack)
@@ -71,7 +72,8 @@ class RoomPreviewTests(unittest.TestCase):
             bad = bytearray((furniture / 'bed_cloud.smonfurn').read_bytes()); struct.pack_into('<H', bad, 6, 65535)
             (furniture / 'oversize.smonfurn').write_bytes(bad)
             binary = temp / 'preview-test'
-            build_amoled_host(binary, ['tools/amoled_room_preview_host.cpp'], debug=True)
+            build_amoled_host(binary, ['tools/amoled_room_preview_host.cpp',
+                                       'tools/amoled_checksum_guard.cpp'], debug=True, extra_flags=catalog_flags)
             output = temp / 'frames'; output.mkdir()
             subprocess.run([str(binary), str(resources), str(output)], cwd=ROOT, check=True)
             alt_actual = read565(output / 'alternate-night.rgb565', (480, 370))
@@ -81,6 +83,24 @@ class RoomPreviewTests(unittest.TestCase):
             alt_diff = ImageChops.difference(alt_actual, alt_expected)
             self.assertLessEqual(max(high for low, high in alt_diff.getextrema()), 18)
             self.assertLess(sum(ImageStat.Stat(alt_diff).mean) / 3, 3.0)
+            # Both deployed room formats must match the same authored wallpaper
+            # under all furnishings. This includes the day/night window and shadows.
+            wallpaper_dir = ROOT / 'origin_asset/room/wallpapers'
+            forest = Image.open(wallpaper_dir / 'forest.png').convert('RGBA')
+            mask = Image.open(wallpaper_dir / 'walls-mask.png').convert('RGBA').getchannel('A')
+            forest.putalpha(ImageChops.multiply(forest.getchannel('A'), mask))
+            layout = room.layout_without_preview_sprites(room.read_layout(room.DEFAULT_LAYOUT))
+            art = room.scale_room_layout_for_art(layout, 2)
+            for mode in ('day', 'night'):
+                background = room.background_path(room.DEFAULT_LAYOUT, layout, mode)
+                expected = composite(art, background, room.DEFAULT_FURNITURE_DIR, mode,
+                                     include_lighting=False, layout_dir=room.DEFAULT_LAYOUT.parent,
+                                     wall_overlay=forest).convert('RGB')
+                for variant in ('baked', 'layered'):
+                    actual = read565(output / f'{variant}-forest-{mode}.rgb565', expected.size)
+                    diff = ImageChops.difference(actual, expected)
+                    self.assertLessEqual(max(high for _, high in diff.getextrema()), 18, (variant, mode))
+                    self.assertLess(sum(ImageStat.Stat(diff).mean) / 3, 3.0, (variant, mode))
             # Compare real C++ composites against the established offline room renderer.
             for bed, rug in [(0, 0)] + [(b, r) for b in range(1, 4) for r in range(1, 4)]:
                 layout = room.read_layout(room.DEFAULT_LAYOUT)

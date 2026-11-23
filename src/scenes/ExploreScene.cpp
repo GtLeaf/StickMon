@@ -3358,7 +3358,14 @@ void ExploreScene::render() {
 #if STICKMON_UI_ROUND_TOUCH
         if (marketStallActive()) {
             auto view = Ui::MarketWalkUi::viewport();
-            if (marketCareUi_.active()) {
+            if (marketWorkshopUi_.page() == Ui::MarketWorkshopUi::Page::WALLPAPER) {
+                marketWorkshopUi_.render(GameEngine::ins().gameState(), &marketCoins_);
+                return;
+            }
+            if (marketWorkshopUi_.active()) {
+                view.cameraOffsetY = marketWorkshopUi_.panelShift(Ui::RoundMarketStall::sceneShift(*market_, view));
+                view.cameraOffsetX = marketWorkshopUi_.panelShift(Ui::RoundMarketStall::sceneShiftX(*market_, view));
+            } else if (marketCareUi_.active()) {
                 view.cameraOffsetY = marketCareUi_.sceneShift(*market_,view);
             } else if (marketTutorUi_.active()) {
                 view.cameraOffsetY = marketTutorUi_.sceneShift(*market_,view);
@@ -4123,6 +4130,15 @@ void ExploreScene::commitMarketWorkshop(Ui::MarketWorkshopUi::Request request,ui
         if(result.result==Game::MarketWorkshop::Result::ALREADY)marketWorkshopUi_.already();
         else marketWorkshopUi_.committed(result.status==Game::MarketTransaction::Status::COMMITTED);
         marketStallClockMs_=Hal::ins().millis();
+    } else if (request == Ui::MarketWorkshopUi::Request::APPLY_WALLPAPER) {
+        using namespace Game::MarketWorkshop;
+        const Wallpaper paper = marketWorkshopUi_.selectedWallpaper();
+        const auto result = Game::MarketTransaction::commit(engine.gameState(),
+            [paper](Game::GameState& state) { return applyWallpaper(state, paper); },
+            [&] { return engine.saveNow(); },
+            [&](Game::MarketTransaction::CoinChange change) { marketCoins_.committed(change); });
+        marketWorkshopUi_.wallpaperCommitted(result.status == Game::MarketTransaction::Status::COMMITTED);
+        marketStallClockMs_ = Hal::ins().millis();
     }
     SfxCue cue;if(marketWorkshopUi_.takeSfx(cue))AudioManager::ins().playSfx(cue);
     if(!marketWorkshopUi_.active()){

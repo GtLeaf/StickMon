@@ -21,7 +21,7 @@ constexpr int PHOTO_FRAME_MASK = 1;
 MenuGrid::Rect wallFrameBounds(const HomeUiContent::Camera& camera) {
     const auto& room = RoomResource::ins();
     return {RoomRenderer::screenX(FurnitureArt::FRAME_WORLD_X, camera.x),
-            RoomRenderer::screenY(room.roomY() + FurnitureArt::FRAME_ART_Y, camera.y),
+            RoomRenderer::screenY(room.roomY(), camera.y) + FurnitureArt::frameTop(room.artScale(), RoomRenderer::PIXEL_SCALE),
             FurnitureArt::FRAME_WORLD_SIZE,
             FurnitureArt::FRAME_WORLD_SIZE + FurnitureArt::FRAME_WORLD_SIZE/3};
 }

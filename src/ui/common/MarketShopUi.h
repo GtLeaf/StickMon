@@ -113,14 +113,7 @@ public:
 
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
         if (page_ == Page::GREET) return 0;
-        const int camera = v.cameraY(s);
-        int lowest = -100000;
-        for (int role = 0; role < 4; ++role) {
-            const int i = s.conversationActor(role);
-            if (i >= 0) lowest = std::max(lowest, v.pixel(s.pose(i).y) - camera);
-        }
-        if (lowest < -10000) return 0;
-        const int opened = std::clamp(lowest - (PANEL_Y - 28), -240, 240);
+        const int opened = MarketView::stallCameraOffset(s, v, PANEL_Y);
         if (transition_ == Transition::OPENING) return tween(0, opened);
         if (transition_ == Transition::CLOSING) return tween(opened, 0);
         return opened;

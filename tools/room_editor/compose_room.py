@@ -1599,8 +1599,10 @@ def composite_receiver_shadows(out, receiver, src, opacity, shadow_layers):
     out.alpha_composite(overlay)
 
 
-def composite(layout, base_path, furniture_dir, mode, include_lighting=True, layout_dir=None):
+def composite(layout, base_path, furniture_dir, mode, include_lighting=True, layout_dir=None, wall_overlay=None):
     out = render_base(layout, base_path, mode, layout_dir)
+    if wall_overlay is not None:
+        out.alpha_composite(wall_overlay)
 
     furniture_root = Path(furniture_dir)
     prepared_items = load_prepared_items(layout, furniture_root, mode)

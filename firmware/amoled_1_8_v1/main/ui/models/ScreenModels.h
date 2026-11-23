@@ -18,6 +18,7 @@
 #include "game/ExploreDaylight.h"
 #include "game/EvolutionSequence.h"
 #include "game/GameState.h"
+#include "game/WallpaperCatalog.h"
 #include "game/ShopService.h"
 #include "game/BathInteraction.h"
 namespace Ui { class HomePhotoFrame; }
@@ -25,6 +26,7 @@ namespace AmoledV1 {
 
 struct HomeViewModel {
     uint16_t placedFurniture = 0;
+    Game::MarketWorkshop::Wallpaper wallpaper = Game::MarketWorkshop::Wallpaper::ORIGINAL;
     const Ui::HomePhotoFrame* wallPhoto = nullptr;
     struct MonsterHud {
         uint8_t hp = 0;
@@ -327,6 +329,7 @@ struct ComputerViewModel {
 };
 
 struct HatchViewModel {
+    Game::MarketWorkshop::Wallpaper wallpaper = Game::MarketWorkshop::Wallpaper::ORIGINAL;
     uint16_t remainingSeconds = 180;
     uint16_t gameMinutesOfDay = 7 * 60;
     int8_t shakeOffset = 0;

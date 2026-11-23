@@ -281,19 +281,20 @@ int main(int argc,char**argv){
     };
     assert(library.refresh()==Photos::Result::OK&&library.count()==5&&binding()==0);
     const auto chosen=library.entry(1);
-    for(int y=144;y<=189;++y)for(int x=240;x<=285;++x){
-        const bool inFrame=x>=241&&x<=284&&y>=145&&y<=188;
+    constexpr int frameSampleY=158; // The half-unit wall anchor rounds to a whole row on the round panel.
+    for(int y=frameSampleY-22;y<=frameSampleY+23;++y)for(int x=240;x<=285;++x){
+        const bool inFrame=x>=241&&x<=284&&y>=frameSampleY-21&&y<=frameSampleY+22;
         assert((home.touchTarget(x,y)==3)==inFrame&&"Wall frame must have a 44px square hit box");
     }
-    homeEvent(T::DOWN,240,166);
-    assert(!homeEvent(T::UP,263,166)&&"A touch that starts outside cannot open the frame");
-    homeEvent(T::DOWN,263,166);
-    assert(!homeEvent(T::UP,285,166)&&"A touch that ends outside cannot open the frame");
-    homeEvent(T::DOWN,263,166);homeEvent(T::CANCEL,263,166);
-    assert(!homeEvent(T::UP,263,166)&&"A canceled touch cannot open the frame");
-    homeEvent(T::DOWN,241,145);homeEvent(T::MOVE,240,166);
+    homeEvent(T::DOWN,240,frameSampleY);
+    assert(!homeEvent(T::UP,263,frameSampleY)&&"A touch that starts outside cannot open the frame");
+    homeEvent(T::DOWN,263,frameSampleY);
+    assert(!homeEvent(T::UP,285,frameSampleY)&&"A touch that ends outside cannot open the frame");
+    homeEvent(T::DOWN,263,frameSampleY);homeEvent(T::CANCEL,263,frameSampleY);
+    assert(!homeEvent(T::UP,263,frameSampleY)&&"A canceled touch cannot open the frame");
+    homeEvent(T::DOWN,241,frameSampleY-21);homeEvent(T::MOVE,240,frameSampleY);
     desktop.advanceMs(1200);
-    assert(homeEvent(T::UP,284,188)&&"Wall frame only checks endpoints of the same touch");
+    assert(homeEvent(T::UP,284,frameSampleY+22)&&"Wall frame only checks endpoints of the same touch");
     shot("frame-01-empty",home);
     const auto frozenRoom=snapshot();
     engine.sceneDirty=false;
@@ -374,25 +375,25 @@ int main(int argc,char**argv){
     assert(homeTap(180,52));shot("frame-05-wall",home);
     assert(library.loadThumbnail(chosen,restored.data())==Photos::Result::OK);
     const uint16_t wallSample=restored[22*Photos::THUMB_WIDTH+22];
-    assert(canvas.readPixel(263,166)==wallSample);
-    const uint16_t frameEdge = canvas.readPixel(253, 154);
+    assert(canvas.readPixel(263,frameSampleY)==wallSample);
+    const uint16_t frameEdge = canvas.readPixel(253,frameSampleY-12);
     const auto daytimeClock=engine.gameClock;
     engine.gameClock.set(desktop.millis(),19*60);
     homeRender(false);shot("frame-06-wall-night",home);
-    assert(canvas.readPixel(263,166)==wallSample&&"Wall photo must keep its original colors at night");
-    assert(canvas.readPixel(253,154)==frameEdge&&"Frame edge must keep its original colors at night");
+    assert(canvas.readPixel(263,frameSampleY)==wallSample&&"Wall photo must keep its original colors at night");
+    assert(canvas.readPixel(253,frameSampleY-12)==frameEdge&&"Frame edge must keep its original colors at night");
     engine.gameClock=daytimeClock;
     assert(home.update(desktop.millis(),.066f).redraw&&
         home.progressionModal==MainScene::ProgressionModal::LEVEL_UP);
     state.pendingLevelUp=false;
     home.onExit();home.onEnter();
-    assert(homeTap(263,166));homeRender(false);
+    assert(homeTap(263,frameSampleY));homeRender(false);
     assert(homeTap(180,299)&&swipeLeft());
     assert(home.prepareDisplayLock()&&binding()==chosen.id&&home.redrawOnStateChange());
     assert(library.erase(chosen)==Photos::Result::OK);
     assert(library.save(expected.data(),0,1)==Photos::Result::OK);
     home.onExit();home.onEnter();
-    assert(homeTap(263,166));homeRender(false);
+    assert(homeTap(263,frameSampleY));homeRender(false);
     assert(canvas.readPixel(180,172)==PixelRenderer::rgb(228,232,208)&&
         "A replacement photo in a deleted picture's slot must not inherit the frame");
     assert(homeTap(180,52));
@@ -407,12 +408,12 @@ int main(int argc,char**argv){
     const int firstByte=std::fgetc(file);
     assert(firstByte!=EOF&&std::fseek(file,thumbOffset,SEEK_SET)==0);
     assert(std::fputc(firstByte^1,file)!=EOF&&std::fclose(file)==0);
-    assert(homeTap(263,166)&&homeTap(180,299));
+    assert(homeTap(263,frameSampleY)&&homeTap(180,299));
     assert(homeTap(308,172)&&homeTap(180,299)&&binding()==damagedThumb.id&&
         "Unreadable thumbnails must keep their album position and remain selectable");
     assert(homeTap(180,52));
     state.room.placedFurniture=0;
-    assert(!homeTap(263,166)&&"Unplaced furniture is not interactive");
+    assert(!homeTap(263,frameSampleY)&&"Unplaced furniture is not interactive");
     engine.switchScene(SceneID::MENU,false);
     assert(engine.resetGame());Photos::Library retained;assert(retained.refresh()==Photos::Result::OK&&retained.count()==5);
     assert(retained.loadImage(retained.entry(0),restored.data())==Photos::Result::OK&&restored==expected);

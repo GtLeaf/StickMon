@@ -139,9 +139,16 @@ static constexpr const char* BOOK_TEA = "预约茶会";
 namespace MarketWorkshopText {
 static constexpr const char* WELCOME="袋龙：你好呀！我正为工坊开张做准备呢。";
 static constexpr const char* GIFT="袋龙：这是我试做的相框，送你吧！";
-static constexpr const char* OPENING="袋龙：工坊还在布置中，开张了记得来捧场！";
+static constexpr const char* OPENING="袋龙：工坊开张啦！来看看喜欢的壁纸吧！";
 static constexpr const char* RECEIVED="获得相框";
 static constexpr const char* RETRY="袋龙：礼物没送成，再点一下试试。";
+static constexpr const char* WALLPAPER="壁纸";
+static constexpr const char* FURNITURE="家具";
+static constexpr const char* PREPARING="还在准备中";
+static constexpr const char* BUY="买下并换上  %u";
+static constexpr const char* EQUIP="换上";
+static constexpr const char* EQUIPPED="使用中";
+static constexpr const char* UNAVAILABLE="资源不可用";
 }
 
 // Gengar stall (秘技小屋). ASCII separators keep the 16/32px glyph grid.

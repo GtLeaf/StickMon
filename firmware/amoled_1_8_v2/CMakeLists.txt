@@ -63,6 +63,18 @@ set(RESOURCE_ACTIVE "${STICKMON_ROOT}/data/active.json")
 set(RESOURCE_MANIFEST "${STICKMON_ROOT}/data/packs/dev/manifest.json")
 set(RESOURCE_SPRITES_DIR "${STICKMON_ROOT}/data/packs/dev/sprites")
 set(RESOURCE_ROOM "${STICKMON_ROOT}/data/packs/dev/rooms/standard.smonroom")
+set(WALLPAPER_CATALOG "${STICKMON_ROOT}/origin_asset/room/wallpapers/catalog.json")
+set(WALLPAPER_LISTER "${STICKMON_ROOT}/tools/wallpaper_catalog.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${WALLPAPER_CATALOG}" "${WALLPAPER_LISTER}"
+    "${STICKMON_ROOT}/src/assets/WallpaperCatalog.inc")
+execute_process(
+    COMMAND "${PYTHON}" "${WALLPAPER_LISTER}" --catalog "${WALLPAPER_CATALOG}"
+    OUTPUT_VARIABLE WALLPAPER_PATHS OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE WALLPAPER_CHECK ERROR_VARIABLE WALLPAPER_ERROR)
+if(NOT WALLPAPER_CHECK EQUAL 0)
+    message(FATAL_ERROR "${WALLPAPER_ERROR}")
+endif()
+string(REPLACE "\n" ";" RESOURCE_WALLPAPERS "${WALLPAPER_PATHS}")
 set(RESOURCE_MAPS "${STICKMON_ROOT}/data/packs/dev/game/maps.smonfx")
 set(RESOURCE_UI "${STICKMON_ROOT}/data/packs/dev/game/ui_amoled.smonfx")
 set(RESOURCE_BATTLE "${STICKMON_ROOT}/data/packs/dev/game/battle.smonfx")
@@ -142,6 +154,10 @@ foreach(RESOURCE_SPRITE_FILE IN LISTS RESOURCE_SPRITE_FILES)
 endforeach()
 configure_file("${RESOURCE_ROOM}"
                "${RESOURCE_STAGE_DIR}/packs/dev/rooms/standard.smonroom" COPYONLY)
+foreach(WALLPAPER_FILE IN LISTS RESOURCE_WALLPAPERS)
+    get_filename_component(WALLPAPER_NAME "${WALLPAPER_FILE}" NAME)
+    configure_file("${WALLPAPER_FILE}" "${RESOURCE_STAGE_DIR}/packs/dev/rooms/${WALLPAPER_NAME}" COPYONLY)
+endforeach()
 # Layered rooms and reusable furniture are currently a Debug preview feature.
 set(RESOURCE_DEBUG_ROOMS)
 if(STICKMON_ENABLE_DEBUG_FEATURES)
@@ -197,7 +213,7 @@ spiffs_create_partition_image(
     "${RESOURCE_STAGE_DIR}"
     FLASH_IN_PROJECT
     DEPENDS "${RESOURCE_ACTIVE}" "${RESOURCE_MANIFEST}" "${RESOURCE_MENU}" ${RESOURCE_LAYOUT_FILES}
-            ${RESOURCE_SPRITE_FILES} "${RESOURCE_ROOM}" ${RESOURCE_DEBUG_ROOMS} "${RESOURCE_MAPS}"
+            ${RESOURCE_SPRITE_FILES} "${RESOURCE_ROOM}" ${RESOURCE_WALLPAPERS} ${RESOURCE_DEBUG_ROOMS} "${RESOURCE_MAPS}"
             "${RESOURCE_UI}" "${RESOURCE_BATTLE}" "${RESOURCE_HATCH}"
             ${RESOURCE_FONT_FILES} ${RESOURCE_AUDIO_FILES}
             ${RESOURCE_CRY_FILES} "${RESOURCE_DIALOGUE}"

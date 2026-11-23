@@ -4,6 +4,7 @@
 #include "core/GameEngine.h"
 #include "hardware/Hal.h"
 #include "game/HatchService.h"
+#include "game/MarketWorkshopService.h"
 
 namespace {
 float savedElapsed = 0.0f;
@@ -131,5 +132,5 @@ Ui::HatchFrame HatchScene::hatchFrame(uint32_t nowMs) const {
     const uint16_t minutes = engine.gameMinutesOfDay();
     return {nowMs, Game::HatchService::progressPercent(elapsed, total),
         Game::HatchService::remainingSeconds(elapsed, total),
-        minutes < 6 * 60 || minutes >= 18 * 60};
+        minutes < 6 * 60 || minutes >= 18 * 60, Game::MarketWorkshop::equippedWallpaper(engine.gameState())};
 }

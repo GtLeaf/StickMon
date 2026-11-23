@@ -3,38 +3,51 @@
 #include "presentation/PixelRenderer.h"
 
 namespace FurnitureArt {
-inline constexpr int FRAME_WORLD_X = 193, FRAME_ART_Y = 54, FRAME_WORLD_SIZE = 21;
+inline constexpr int FRAME_WORLD_X = 193, FRAME_WORLD_SIZE = 21;
+inline constexpr int WALL_PHOTO_SIZE = 13;
+// The upper-left corner lies 5 native (2x) pixels above the wall-aligned position.
+inline constexpr float FRAME_ART_Y = 45.5f;
 
-inline uint16_t framePixel(int x,int y){
-    if(x<0||x>=112||y<0||y>=112)return 0;
-    int r=88,g=56,b=40;
-    const auto set=[&](int nr,int ng,int nb){r=nr;g=ng;b=nb;};
-    if(x>=3&&x<109&&y>=3&&y<109)set(184,128,72);
-    if(x>=6&&x<106&&y>=6&&y<12)set(232,188,120);
-    if(x>=6&&x<12&&y>=6&&y<106)set(224,172,104);
-    if(x>=9&&x<103&&y>=97&&y<103)set(136,88,56);
-    if(x>=97&&x<103&&y>=9&&y<103)set(136,88,56);
-    if(x>=12&&x<100&&y>=12&&y<100&&(x==12||x==99||y==12||y==99))set(104,72,48);
-    if(x>=15&&x<97&&y>=15&&y<97)set(248,240,212);
-    if(x>=20&&x<92&&y>=20&&y<92)set(228,232,208);
-    if(x>=25&&y>=25&&x+y<=71)set(244,244,224);
-    if(x>=24&&x<88&&y>=24&&y<26)set(248,248,232);
-    return PixelRenderer::rgb(uint8_t(r),uint8_t(g),uint8_t(b));
+inline int frameTop(int artScale, int displayScale) {
+    const int artRow = static_cast<int>(FRAME_ART_Y * artScale + 0.5f);
+    // First display row that samples this source row, including on legacy 1x room art.
+    return (artRow * displayScale + artScale - 1) / artScale;
 }
-inline void drawFrame(Canvas565& c,int cx,int cy,int size=112){
-    if(size<=0)return;
-    const int x=cx-size/2,y=cy-size/2;
-    if(size==112){
-        const auto rgb=[](int r,int g,int b){return PixelRenderer::rgb(uint8_t(r),uint8_t(g),uint8_t(b));};
-        c.fillRect(x+6,y+7,112,112,rgb(56,40,24));c.fillRect(x,y,112,112,rgb(88,56,40));
-        c.fillRect(x+3,y+3,106,106,rgb(184,128,72));c.fillRect(x+6,y+6,100,6,rgb(232,188,120));
-        c.fillRect(x+6,y+6,6,100,rgb(224,172,104));c.fillRect(x+9,y+97,94,6,rgb(136,88,56));
-        c.fillRect(x+97,y+9,6,94,rgb(136,88,56));c.drawRect(x+12,y+12,88,88,rgb(104,72,48));
-        c.fillRect(x+15,y+15,82,82,rgb(248,240,212));c.fillRect(x+20,y+20,72,72,rgb(228,232,208));
-        for(int i=0;i<22;++i)c.drawLine(x+25+i,y+25,x+25,y+25+i,rgb(244,244,224));
-        c.fillRect(x+24,y+24,64,2,rgb(248,248,232));return;
+
+// Distances are measured inward from a rail on a 112 px reference frame.
+inline uint16_t railColor(int depth, bool lit) {
+    if (depth < 2) return lit ? PixelRenderer::rgb(142, 90, 53) : PixelRenderer::rgb(94, 59, 36);
+    if (depth < 5) return lit ? PixelRenderer::rgb(232, 181, 116) : PixelRenderer::rgb(147, 91, 51);
+    if (depth < 10) return lit ? PixelRenderer::rgb(199, 139, 80) : PixelRenderer::rgb(176, 113, 64);
+    // The inner bevel turns toward the picture, reversing the lighting.
+    if (depth < 13) return lit ? PixelRenderer::rgb(128, 78, 45) : PixelRenderer::rgb(216, 161, 98);
+    if (depth < 15) return lit ? PixelRenderer::rgb(102, 66, 42) : PixelRenderer::rgb(156, 105, 65);
+    return PixelRenderer::rgb(242, 228, 197);
+}
+
+inline uint16_t framePixel(int x, int y, int size) {
+    const int lightEdge = std::min(x, y);
+    const int darkEdge = size - 1 - std::max(x, y);
+    const int depth = std::min(lightEdge, darkEdge) * 112 / size;
+    if (depth >= 20) return PixelRenderer::rgb(228, 232, 208);
+    return railColor(depth, lightEdge <= darkEdge);
+}
+
+inline void drawFrame(Canvas565& canvas, int cx, int cy, int size = 112) {
+    if (size <= 0) return;
+    const int x = cx - size / 2, y = cy - size / 2;
+    const int side = std::max(1, size / 112), bottom = std::max(1, size / 56);
+    canvas.fillRect(x + side, y + bottom, size, size, PixelRenderer::rgb(92, 57, 35));
+    const int inset = (20 * size + 111) / 112;
+    canvas.fillRect(x + inset, y + inset, size - 2 * inset, size - 2 * inset,
+                    PixelRenderer::rgb(228, 232, 208));
+    for (int i = 0; i < inset; ++i) {
+        const int depth = i * 112 / size, span = size - 2 * i;
+        const uint16_t light = railColor(depth, true), dark = railColor(depth, false);
+        canvas.drawFastHLine(x + i, y + size - 1 - i, span, dark);
+        canvas.drawFastVLine(x + size - 1 - i, y + i, span, dark);
+        canvas.drawFastHLine(x + i, y + i, span, light);
+        canvas.drawFastVLine(x + i, y + i, span, light);
     }
-    c.fillRect(x+std::max(1,size*6/112),y+std::max(1,size*7/112),size,size,PixelRenderer::rgb(56,40,24));
-    for(int row=0;row<size;++row)for(int col=0;col<size;++col)c.drawPixel(x+col,y+row,framePixel(col*112/size,row*112/size));
 }
 }

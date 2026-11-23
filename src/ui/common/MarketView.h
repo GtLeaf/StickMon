@@ -46,6 +46,16 @@ struct Viewport {
     }
 };
 
+inline int stallCameraOffset(const Market::Session& session, const Viewport& view, int panelTop) {
+    const int camera = view.cameraY(session);
+    int lowest = -100000;
+    for (int role = 0; role < 4; ++role) {
+        const int actor = session.conversationActor(role);
+        if (actor >= 0) lowest = std::max(lowest, view.pixel(session.pose(actor).y) - camera);
+    }
+    return lowest == -100000 ? 0 : std::clamp(lowest - (panelTop - 28), -240, 240);
+}
+
 inline Viewport sceneViewport() {
     return {Ui::SceneSurface::width(),Ui::SceneSurface::height(),1,Ui::family==Ui::Family::ROUND_TOUCH};
 }

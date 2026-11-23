@@ -88,4 +88,11 @@ inline void render(uint32_t balance,const MarketCoinMotion* live,int y,int heigh
         for(const char* p=value;*p;++p,x+=tagCell)detail::glyph(c,*p,x,tagY,tagHeight,color,opacity,false,true);
     }
 }
+// Round market stalls keep the rolling balance centered on the 360 px display.
+inline void renderRound(uint32_t balance,const MarketCoinMotion* motion,int offset=0) {
+    MarketCoinMotion still;
+    if (!motion) { still.reset(balance); motion = &still; }
+    const int right = 180 + int(std::lround((motion->frame().widthDigits + 1)*8));
+    render(balance,motion,16+offset,32,{right,32,48,48});
+}
 } // namespace Ui::MarketCoinHud

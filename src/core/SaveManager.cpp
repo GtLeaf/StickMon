@@ -13,6 +13,7 @@
 #include "game/FriendshipPity.h"
 #include "game/MarketSchedule.h"
 #include "game/MarketSupply.h"
+#include "game/MarketWorkshopService.h"
 #include "game/Species.h"
 #include "platform/api/PlatformServices.h"
 
@@ -183,7 +184,13 @@ struct SaveRecordV11 {
     uint8_t stateBytes[2540];MainSceneViewRecord view;
 };
 static_assert(sizeof(SaveRecordV11)==2644,"raw v11 envelope changed");
-static_assert(offsetof(Game::LegacyGameState,storageUpgrades)==2540,"legacy v11 size changed");
+static_assert(offsetof(Game::LegacyGameState,wallpaperId)==2540,"legacy v11 size changed");
+
+struct SaveRecordV12 {
+    uint32_t magic;uint16_t version;uint16_t reserved;
+    uint8_t stateBytes[2544];MainSceneViewRecord view;
+};
+static_assert(sizeof(SaveRecordV12)==2648,"raw v12 envelope changed");
 
 struct SaveRecordHeader {
     uint32_t magic;
@@ -491,8 +498,10 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
     copyPart(offsetof(Old,bag),offsetof(Now,bag),offsetof(Old,careRewards)-offsetof(Old,bag));
     copyPart(offsetof(Old,careRewards),offsetof(Now,careRewards),sizeof(Old::careRewards));
     copyPart(offsetof(Old,marketTutor),offsetof(Now,marketTutor),2540-offsetof(Old,marketTutor));
+    if(version>=12)state.wallpaperId=stateBytes[2540];
     state.storageCount=std::min<uint8_t>(state.storageCount,20);
     if(version<=10)state.friendshipPity = FriendshipPity::migrateLegacy(state.legacyFriendshipPity);
+    if(version<12)Game::MarketWorkshop::migrateLegacyWallpaper(state);
     std::memset(state.legacyFriendshipPity, 0, sizeof(state.legacyFriendshipPity));
     state.settings.reservedAudioSetting = 0;
     // Legacy v1/v2 records did not define gender. Use the requested stable
@@ -1202,6 +1211,10 @@ bool SaveManager::load(Game::GameState& state,
     } else if (header.version == 11 && len == sizeof(SaveRecordV11)) {
         const auto* record = reinterpret_cast<const SaveRecordV11*>(raw);
         loaded=loadLegacyGameState(record->stateBytes,11,state,2540);
+        if(loaded){viewValid=mainSceneViewRecordValid(record->view);if(viewValid)loadMainSceneViewRecord(record->view,viewState);migrated=true;}
+    } else if (header.version == 12 && len == sizeof(SaveRecordV12)) {
+        const auto* record=reinterpret_cast<const SaveRecordV12*>(raw);
+        loaded=loadLegacyGameState(record->stateBytes,12,state,2544);
         if(loaded){viewValid=mainSceneViewRecordValid(record->view);if(viewValid)loadMainSceneViewRecord(record->view,viewState);migrated=true;}
     } else if (header.version == SAVE_RECORD_VERSION &&
                len == sizeof(SaveRecord)) {

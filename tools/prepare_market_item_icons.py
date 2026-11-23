@@ -11,12 +11,11 @@ import struct
 import zlib
 from pathlib import Path
 
-from PIL import Image, ImageFont
+from PIL import Image
 from generate_game_assets import (ROOT, KIND_ORDER, MARKET_ITEMS, OUTPUTS, Writer,
                                   indexed4_rle, write_pack, MAGIC, VERSION)
-from generate_font16cn import (SARASA_FONT_PATH, UNSCII_CHARS, collect_ui_chars,
-                              glyph_bytes, glyph_bytes_large)
-from generate_round_ui_fonts import glyph_alpha
+from generate_font16cn import collect_ui_chars
+from extend_ui_font import with_ui_glyphs
 
 ICON_ROOT = ROOT / 'origin_asset/icon/market/items'
 VITAMINS = {'protein', 'iron', 'calcium', 'zinc', 'carbos'}
@@ -89,29 +88,10 @@ def install_icons(images, path=None):
 
 
 def extend_font(path, chars):
-    from font_pack import compress_font, unpack_font
-    data = unpack_font(Path(path).read_bytes())
-    magic, version, count, width, height, stride, reserved, flags = struct.unpack_from('<IHHBBBBI', data)
-    if (magic != 0x4e464d53 or width != height or reserved or
-            (version, width, stride, flags) not in {(1, 16, 32, 0), (1, 32, 128, 0), (2, 16, 128, 4)} or
-            len(data) != 16 + count * (4 + stride)):
-        raise ValueError(f'Unsupported font pack: {path}')
-    existing = {chr(struct.unpack_from('<I', data, 16 + i * (4 + stride))[0]):
-                data[20 + i * (4 + stride):20 + i * (4 + stride) + stride]
-                for i in range(count)}
-    missing = set(chars) - existing.keys() - UNSCII_CHARS
-    if not missing:
-        return
-    font = ImageFont.truetype(str(SARASA_FONT_PATH), width)
-    for char in missing:
-        existing[char] = (glyph_alpha(font, char, width) if version == 2 else
-                          bytes((glyph_bytes if width == 16 else glyph_bytes_large)(font, char)))
-    header = bytearray(data[:16])
-    struct.pack_into('<H', header, 6, len(existing))
-    payload = b''.join(struct.pack('<I', ord(char)) + existing[char]
-                       for char in sorted(existing, key=ord))
-    Path(path).write_bytes(compress_font(header + payload))
-    print(Path(path).name, 'added glyphs:', ''.join(sorted(missing)))
+    source = path.read_bytes()
+    updated = with_ui_glyphs(source, chars)
+    if updated != source:
+        path.write_bytes(updated)
 
 
 def main():

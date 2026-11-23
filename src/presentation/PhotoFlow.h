@@ -17,6 +17,8 @@ public:
     int frameSize()const{return frameSize_;}
     Rect backBounds()const;
     Rect shutterBounds()const;
+    static constexpr Rect ZOOM_OUT_BOUNDS{64,368,56,56};
+    static constexpr Rect ZOOM_IN_BOUNDS{248,368,56,56};
     Rect retakeBounds()const;
     Rect saveBounds()const;
     Rect trashBounds()const;
@@ -72,6 +74,7 @@ private:
     TouchTap tap_;Ui::MarketListScroll scroll_;
     bool contains(int x,int y)const;
     void moveFrame(int x,int y);
+    void resizeFrame(Rect origin,int delta);
     void thumbnails();
     void show(unsigned index);
     int target(int x,int y)const;

@@ -1,6 +1,7 @@
 #include "core/SaveCodec.h"
 #include "game/FriendshipPity.h"
 #include "game/StorageCapacity.h"
+#include "game/MarketWorkshopService.h"
 
 #include <cstring>
 #include <new>
@@ -322,6 +323,7 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u8(state.marketSupply.pendingAdvice);
     writer.u8(state.marketSupply.stockPlan);
     writer.u8(state.marketSupply.boxRoll2);
+    writer.u8(state.wallpaperId);
     writer.u8(state.storageUpgrades);
     writer.u32(state.storageExpansionPeriod);
     for (unsigned i=20;i<state.storageCount;++i) writeMonster(writer,state.storage[i]);
@@ -349,7 +351,7 @@ void readCare(Reader& reader,Game::CareRewardRecord& record) {
             record.valid = reader.u8() != 0;
         }
 
-bool readState(Reader& reader, uint16_t schema, Game::GameState& state) {
+bool readState(Reader& reader, uint16_t schema, Game::GameState& state,bool legacyExpansion) {
     new (&state) Game::GameState{};
     uint32_t magic = reader.u32();
     uint16_t version = reader.u16();
@@ -490,7 +492,9 @@ bool readState(Reader& reader, uint16_t schema, Game::GameState& state) {
         state.marketSupply.stockPlan = reader.u8();
         state.marketSupply.boxRoll2 = reader.u8();
     }
-    if (schema >= 11) {
+    if (schema >= 11 && !legacyExpansion) state.wallpaperId = reader.u8();
+    else Game::MarketWorkshop::migrateLegacyWallpaper(state);
+    if (schema >= 12 || legacyExpansion) {
         state.storageUpgrades=reader.u8();
         state.storageExpansionPeriod=reader.u32();
         if(state.storageUpgrades>Game::StorageCapacity::MAX_UPGRADES || state.storageCount>Game::StorageCapacity::capacity(state))return false;
@@ -647,15 +651,19 @@ bool decode(const uint8_t* input,
     header.u16();
     if (!header.ok() || payloadLength != length - HEADER_BYTES) return false;
 
+    // The unpublished expansion branch and wallpaper main briefly both used
+    // schema 11/state 12. Wallpaper snapshots are fixed at 2488 bytes; the
+    // expansion suffix makes that branch at least 2493 bytes.
+    const bool legacyExpansion=schema==11&&length>=2493;
     Reader reader(input + HEADER_BYTES, payloadLength);
-    if(!readState(reader, schema, snapshot.state))return false;
+    if(!readState(reader, schema, snapshot.state,legacyExpansion))return false;
     readView(reader, snapshot.view);
     const uint16_t expectedStateVersion = stateVersionForSchema(schema);
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
         snapshot.state.version != expectedStateVersion ||
         snapshot.state.teamCount > Game::TEAM_CAP ||
-        snapshot.state.storageCount > (schema < 11 ? 20 : Game::StorageCapacity::capacity(snapshot.state)) ||
+        snapshot.state.storageCount > (schema < 12 && !legacyExpansion ? 20 : Game::StorageCapacity::capacity(snapshot.state)) ||
         snapshot.state.storageUpgrades > Game::StorageCapacity::MAX_UPGRADES) {
         return false;
     }

@@ -40,7 +40,7 @@ void renderHatchScreen(Canvas565& canvas, const HatchViewModel& model,
                      (ROOM_BOTTOM - HEADER_HEIGHT) / 2)) : 0;
     const bool roomDrawn = RoomRenderer::drawViewport(
             0, HEADER_HEIGHT, AmoledUi::WIDTH, ROOM_BOTTOM - HEADER_HEIGHT,
-            cameraX, cameraY, model.night, AmoledUi::RESOURCE_SCALE);
+            cameraX, cameraY, model.night, AmoledUi::RESOURCE_SCALE, 0, model.wallpaper);
     if (!roomDrawn) {
         canvas.fillRect(0, HEADER_HEIGHT, AmoledUi::WIDTH,
                         ROOM_BOTTOM - HEADER_HEIGHT, UiCommon::rgb(31, 43, 49));
