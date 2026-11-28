@@ -110,11 +110,12 @@ public:
         return shift;
     }
 
-    Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
+    Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state, MarketCoinMotion* coins = nullptr) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
         if (!inside(e.x,e.y)) { cancelTouch(); return none; }
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
+        if (page_ != Page::GREET && MarketCoinHud::inspect(e,coins,16+hudOffset(),32,MarketCoinHud::ROUND)) return none;
         if (page_ == Page::BOX_ARRIVE || page_ == Page::BOX_OPEN) { cancelTouch(); return none; }
         if (page_ == Page::BOX_WAIT) {
             const int target = RoundMarketStall::PANEL.contains(e.x,e.y) ? PRIMARY : -1;

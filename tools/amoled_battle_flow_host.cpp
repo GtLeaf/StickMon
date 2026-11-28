@@ -175,11 +175,11 @@ void checkBattleSettlementAndProgression() {
     session.begin(state, wild, 0, true, 200, ExploreSpecial::Kind::FIRST_LATIAS, 0, 100);
     assert(session.resolveBattleFaint(state, 100));
     session.takeEffects();
-    const auto coins = state.coins;
+    state.coins = 9'999'998;
     session.finishBattleVictory(state, 1000);
     const auto settled = state;
     const auto randomAfterSettlement = draws;
-    assert(state.coins > coins && state.team[0].level > 15 && state.team[1].level > 15);
+    assert(state.coins == 9'999'999 && state.team[0].level > 15 && state.team[1].level > 15);
     assert(session.state().battleProgressionCount == 2 && session.state().battleVictoryFinalizePending);
     session.takeEffects();
     for (int repeat = 0; repeat < 3; ++repeat) {

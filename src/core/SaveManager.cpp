@@ -6,6 +6,7 @@
 #include <new>
 #include "game/BondSystem.h"
 #include "game/CareExperience.h"
+#include "game/CoinWallet.h"
 #include "game/ExploreBossPity.h"
 #include "game/ExploreSpecialEncounter.h"
 #include "game/FriendshipPity.h"
@@ -817,8 +818,8 @@ bool sanitizeState(Game::GameState& state) {
         }
     }
 
-    if (state.coins > 99999) {
-        state.coins = 99999;
+    if (state.coins > Game::CoinWallet::CAP) {
+        state.coins = Game::CoinWallet::CAP;
         changed = true;
     }
     if (state.stepsToday > 60000) {

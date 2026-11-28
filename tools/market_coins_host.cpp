@@ -142,5 +142,21 @@ static void carryBoundsAndMixedSigns() {
     f=m.frame();int visible=0;for(const auto& tag:f.tags){visible+=tag.visible;if(tag.visible)assert(tag.delta==-1);}
     assert(visible==2);m.update(1000);assert(!m.frame().tags[0].visible&&!m.frame().tags[1].visible);
 }
-int main(){durableBoundary();wallpaperTransactions();rollAndRetarget();carryBoundsAndMixedSigns();
+static void compactThreshold() {
+    Ui::MarketCoinMotion motion;
+    motion.reset(9999);
+    assert(motion.committed({9999,10000}));
+    assert(motion.frame().labelPosition == 9999 && motion.frame().compactRoll);
+    motion.update(100);
+    const auto intermediate = motion.frame().labelPosition;
+    assert(intermediate > 9999 && intermediate < 10000);
+    assert(motion.committed({10000,9999}));
+    assert(motion.frame().labelPosition == intermediate && motion.frame().compactRoll);
+    motion.update(570);
+    assert(!motion.frame().compactRoll && motion.frame().labelPosition == 9999);
+    motion.reset(9999999);
+    const auto index = static_cast<uint32_t>(motion.frame().labelPosition);
+    assert(std::strcmp(Ui::CoinLabel::at(index).text,"999.9w") == 0);
+}
+int main(){compactThreshold();durableBoundary();wallpaperTransactions();rollAndRetarget();carryBoundsAndMixedSigns();
     std::puts("market-coins: atomic rollback/durable events, single-use wallpaper purchases and free original restoration, signed deltas, smooth per-digit retarget,450/900ms, carry/bounds, bounded tags and reset OK");}

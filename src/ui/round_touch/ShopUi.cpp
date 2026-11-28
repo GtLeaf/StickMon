@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include "core/UiStrings.h"
+#include "ui/common/CoinLabel.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/round_touch/RoundPage.h"
@@ -177,21 +178,9 @@ void ShopUi::renderTabs() {
 }
 
 int ShopUi::formatBalance(uint32_t coins, char (&text)[24]) {
-    if (coins < 10000) {
-        std::snprintf(text, sizeof(text), "%lu", static_cast<unsigned long>(coins));
-        return int(std::strlen(text)) * 8;
-    }
-    const auto whole = static_cast<unsigned long>(coins / 10000);
-    const auto hundredths = static_cast<unsigned long>((coins % 10000) / 100);
-    // Truncate compact amounts so the displayed balance never overstates funds.
-    // Large amounts use whole ten-thousands to keep every uint32 balance legible.
-    char number[16];
-    if (whole >= 100 || !hundredths) std::snprintf(number, sizeof(number), "%lu", whole);
-    else if (hundredths % 10 == 0)
-        std::snprintf(number, sizeof(number), "%lu.%lu", whole, hundredths / 10);
-    else std::snprintf(number, sizeof(number), "%lu.%02lu", whole, hundredths);
-    std::snprintf(text, sizeof(text), "%s万", number);
-    return int(std::strlen(number)) * 8 + 16;
+    const CoinLabel label(coins);
+    std::snprintf(text, sizeof(text), "%s", label.text);
+    return label.cells() * 8;
 }
 
 void ShopUi::renderCoins() {

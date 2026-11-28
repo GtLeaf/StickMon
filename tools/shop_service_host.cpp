@@ -74,10 +74,10 @@ int main() {
     assert(state.candyPurchasesToday == 0);
 
     state.bag.nugget = 1;
-    state.coins = 99800;
+    state.coins = 9'999'995;
     assert(Game::ShopService::sell(state, ItemId::NUGGET) ==
            SellResult::SOLD);
-    assert(state.bag.nugget == 0 && state.coins == 99999);
+    assert(state.bag.nugget == 0 && state.coins == 9'999'999);
     assert(Game::ShopService::sell(state, ItemId::NUGGET) ==
            SellResult::NO_STOCK);
 

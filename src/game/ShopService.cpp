@@ -1,10 +1,10 @@
 #include "game/ShopService.h"
 #include "game/ItemCatalog.h"
 
-#include <algorithm>
 #include <cstddef>
 
 #include "core/UiStrings.h"
+#include "game/CoinWallet.h"
 #include "game/ExploreItemProgression.h"
 #include "game/ItemInventory.h"
 
@@ -259,8 +259,7 @@ BuyResult buy(GameState& state, ItemId item) {
 SellResult sell(GameState& state, ItemId item) {
     if (!sellable(item)) return SellResult::INVALID_ITEM;
     if (!ItemInventory::remove(state, item)) return SellResult::NO_STOCK;
-    uint32_t value = static_cast<uint32_t>(state.coins) + sellPrice(item);
-    state.coins = std::min<uint32_t>(value, 99999U);
+    CoinWallet::credit(state, sellPrice(item));
     return SellResult::SOLD;
 }
 

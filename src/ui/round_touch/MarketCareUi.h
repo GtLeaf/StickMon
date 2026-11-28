@@ -124,10 +124,11 @@ public:
         }
     }
 
-    Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
+    Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state, MarketCoinMotion* coins = nullptr) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
+        if (page_ != Page::GREET && MarketCoinHud::inspect(e,coins,52+hudOffset(),20,MarketCoinHud::ROUND_CARE)) return none;
         if ((int(e.x)-180)*(int(e.x)-180)+(int(e.y)-180)*(int(e.y)-180)>=180*180) {cancelTouch();return none;}
         if(page_==Page::GREET) {
             if(greeting_.touch(e,tap_)){feedback_.set(SfxCue::UI_CONFIRM);openPanel();}
@@ -435,7 +436,7 @@ private:
     }
     void renderHud(const Game::GameState& s,const MarketCoinMotion* coins) const {
         const int y=52+hudOffset();auto& c=PixelRenderer::canvas();c.fillRoundRect(56,y-4,96,32,6,paper());
-        PixelRenderer::textSmooth(64,y+6,MarketCareText::TITLE,ink(),20);MarketCoinHud::render(s.coins,coins,y,20,{288,24,32,36});
+        PixelRenderer::textSmooth(64,y+6,MarketCareText::TITLE,ink(),20);MarketCoinHud::render(s.coins,coins,y,20,MarketCoinHud::ROUND_CARE);
     }
     void renderMenu(const Game::GameState& s) const {
         const char* labels[]={MarketCareText::MENU_MASSAGE,MarketCareText::MENU_TEA,MarketCareText::MENU_EVAL};

@@ -126,14 +126,14 @@ void candyDayAndLastSale() {
 
     clearStock(state);
     assert(Game::ItemInventory::add(state, ItemId::NUGGET));
-    state.coins = 99800;
+    state.coins = 9'999'995;
     Flow flow;
     flow.bind(state);
     flow.cursor = Flow::CATEGORY_SELL;
     assert(flow.activateCategory());
     assert(flow.currentItemCount() == 2 && flow.selectedItem() == Flow::NUGGET);
     assert(Flow::sell(state, flow.selectedItem()) == SellResult::SOLD);
-    assert(state.coins == 99999 && state.bag.nugget == 0);
+    assert(state.coins == 9'999'999 && state.bag.nugget == 0);
     assert(flow.currentItemCount() == 1 && flow.selectedItem() == Flow::BACK);
     const auto after = snapshot(state);
     assert(Flow::sell(state, Flow::NUGGET) == SellResult::NO_STOCK);

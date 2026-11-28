@@ -2,6 +2,7 @@
 #include "core/UiStrings.h"
 #include "game/CareTicker.h"
 #include "game/CareExperience.h"
+#include "game/CoinWallet.h"
 #include "game/EffortService.h"
 #include "game/ExperienceService.h"
 #include "game/ExploreBoss.h"
@@ -666,7 +667,7 @@ void BattleSession::finishBattleVictory(Game::GameState& gameState, uint32_t now
             }
         }
     }
-    gameState.coins += state_.battleRewardCoins;
+    Game::CoinWallet::credit(gameState, state_.battleRewardCoins);
     if (state_.battleIsBoss) {
         uint8_t area = area_;
         if (area < Game::EXPLORE_AREA_COUNT) {

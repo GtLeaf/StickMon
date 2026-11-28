@@ -326,6 +326,20 @@ void verifyNewerVersionIsPreserved() {
     assert(preserved.version == 99 && preserved.sentinel == future.sentinel);
 }
 
+void verifyCoinBalances() {
+    assert(Platform::blobs().clearNamespace("stickmon"));
+    SaveManager manager;
+    MainSceneViewState view;
+    for (uint32_t balance : {99'999U, 100'000U, 9'999'999U, UINT32_MAX}) {
+        Game::GameState state;
+        state.coins = balance;
+        assert(manager.saveSnapshot(state, view));
+        Game::GameState loaded;
+        assert(manager.load(loaded, view));
+        assert(loaded.coins == (balance == UINT32_MAX ? 9'999'999U : balance));
+    }
+}
+
 void verifyCodecAbRecovery() {
     assert(Platform::blobs().clearNamespace("stickmon"));
     SaveManager manager;
@@ -1006,6 +1020,7 @@ int main() {
     verifyV4CareMigration();
     verifyInvalidLegacyViewKeepsGameState();
     verifyNewerVersionIsPreserved();
+    verifyCoinBalances();
     verifyCodecAbRecovery();
     verifySnapshotSuccessMatchesDurableCopy(desktop);
     verifyVisitorIsNotPersisted();

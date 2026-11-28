@@ -1,4 +1,5 @@
 #include "ui/ExplorePostcardLayout.h"
+#include "game/CoinWallet.h"
 #include "game/MarketMapData.h"
 #include "game/MarketWelcome.h"
 #include "ui/common/MarketView.h"
@@ -1240,6 +1241,7 @@ void AmoledApp::cancelTouch() {
     marketUi_.cancel();
     marketMenuTap_.cancel();
     marketMenuPressed_ = false;
+    marketCoinMotion_.cancelTouch();
     marketTutorUi_.cancelTouch();
     marketShopUi_.cancelTouch();
     marketCareUi_.cancelTouch();
@@ -1901,6 +1903,12 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                    teamController_.state().pressedTeamSlot >= 0 && !dragging && distance <= TAP_SLOP) {
             teamController_.showActions(static_cast<uint8_t>(teamController_.state().pressedTeamSlot));
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
+        } else if (shopTouch && !dragging && distance <= TAP_SLOP &&
+                   shopBalanceAt(touchStartX, touchStartY, gameState.coins) &&
+                   shopBalanceAt(event.x, event.y, gameState.coins)) {
+            char balance[24];
+            std::snprintf(balance, sizeof(balance), Ui::Shop::COINS_SHORT_FMT, static_cast<unsigned long>(gameState.coins));
+            setToast(balance, event.timestampMs, 2000);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SHOP &&
                    inventoryController_.state().itemConfirmOpen) {
             // Detail buttons are not scrollable. A release inside the same
@@ -7978,9 +7986,10 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
         }
         break;
     case DebugViewModel::Category::RESOURCE:
-        gameState.coins += 1000;
+        std::snprintf(debugToastBuffer, sizeof(debugToastBuffer), Ui::Debug::COINS_ADDED_FMT,
+                      static_cast<unsigned long>(Game::CoinWallet::credit(gameState, 1000)));
         saveState();
-        setToast(Ui::Debug::COINS_ADDED, nowMs);
+        setToast(debugToastBuffer, nowMs);
         break;
     case DebugViewModel::Category::ENV:
         if (debugCursor == 0) openDebugTimePopup();
@@ -9388,7 +9397,7 @@ void AmoledApp::openMarketWorkshop(uint32_t nowMs){
     marketWorkshopUi_.open(gameState);requestFullRender();
 }
 void AmoledApp::handleMarketWorkshopTouch(const Platform::IInputDevice::TouchEvent& touch){
-    const auto request=marketWorkshopUi_.touch(touch,gameState);
+    const auto request=marketWorkshopUi_.touch(touch, gameState, &marketCoinMotion_);
     if(request==Ui::MarketWorkshopUi::Request::GRANT){
         const auto result=commitMarketTransaction(touch.timestampMs,[](Game::GameState& state){return Game::MarketWorkshop::grantFrame(state);});
         if(result.result==Game::MarketWorkshop::Result::ALREADY)marketWorkshopUi_.already();
@@ -9453,7 +9462,7 @@ void AmoledApp::openMarketShop(uint32_t nowMs) {
 }
 
 void AmoledApp::handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& touch) {
-    const auto request = marketShopUi_.touch(touch, gameState);
+    const auto request = marketShopUi_.touch(touch, gameState, &marketCoinMotion_);
     if (request.kind == Ui::MarketShopUi::Request::NONE) { playMarketFeedback(marketShopUi_); return; }
     using Status=Game::MarketTransaction::Status;
     if (request.kind == Ui::MarketShopUi::Request::ADVISE) {
@@ -9488,7 +9497,7 @@ void AmoledApp::openMarketCare(uint32_t nowMs) {
 }
 
 void AmoledApp::handleMarketCareTouch(const Platform::IInputDevice::TouchEvent& touch) {
-    const auto request = marketCareUi_.touch(touch, gameState);
+    const auto request = marketCareUi_.touch(touch, gameState, &marketCoinMotion_);
     if (request.kind == Ui::MarketCareUi::Request::NONE) { playMarketFeedback(marketCareUi_); return; }
     const auto service = request.kind == Ui::MarketCareUi::Request::TEA
         ? Game::MarketCare::Service::TEA : Game::MarketCare::Service::MASSAGE;
@@ -9515,7 +9524,7 @@ void AmoledApp::closeMarketTutor() {
 }
 
 void AmoledApp::handleMarketTutorTouch(const Platform::IInputDevice::TouchEvent& touch) {
-    const auto request = marketTutorUi_.touch(touch, gameState);
+    const auto request = marketTutorUi_.touch(touch, gameState, &marketCoinMotion_);
     using Request = Ui::MarketTutorUi::Request;
     if (request.kind == Request::NONE) { playMarketFeedback(marketTutorUi_); return; }
     if (request.kind == Request::CLOSE) { closeMarketTutor(); return; }

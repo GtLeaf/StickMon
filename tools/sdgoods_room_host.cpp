@@ -2541,10 +2541,10 @@ int main(int argc, char** argv) {
         tabTap(0);
         const auto frames=desktop.presentCount();tick(400);assert(frames==desktop.presentCount());
         for (const auto& sample:std::vector<std::pair<uint32_t,const char*>>{
-                {0,"0"},{9999,"9999"},{10000,"1万"},{10099,"1万"},
-                {10100,"1.01万"},{11000,"1.1万"},{12345,"1.23万"},
-                {19999,"1.99万"},{999999,"99.99万"},{1000000,"100万"},
-                {UINT32_MAX,"429496万"}}) {
+                {0,"0"},{9999,"9999"},{10000,"1w"},{10099,"1w"},
+                {10100,"1w"},{11000,"1.1w"},{12345,"1.2w"},
+                {19999,"1.9w"},{999999,"99.9w"},{1000000,"100w"},
+                {9999999,"999.9w"},{UINT32_MAX,"429496.7w"}}) {
             char text[24];const int width=Ui::ShopUi::formatBalance(sample.first,text);
             assert(std::strcmp(text,sample.second)==0 && width+20<=coin.width);
         }

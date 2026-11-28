@@ -72,7 +72,9 @@ struct AmoledAppTestAccess {
         // A durable payment settles immediately, but its first HUD frame must still be the old balance.
         assert(header()==old);shot("02-paid-start");
         for(int i=0;i<20;++i){char name[40];std::snprintf(name,sizeof(name),"spend-%02d",i);shot(name);advance(50);}
-        assert(s.coins==27100&&header()!=old);
+        assert(s.coins==27100&&header()==old); // Both balances abbreviate to 2.7w.
+        tap(312,32); assert(ui.page()==Ui::MarketShopUi::Page::BOX_WAIT && header()!=old);
+        advance(2100); assert(header()==old);
         SaveManager manager;Game::GameState loaded;MainSceneViewState view;
         assert(manager.load(loaded,view)&&loaded.coins==27100&&loaded.marketSeason.stock[Game::MarketShop::BOX]==0);
         tap(184,316);advance(1300);assert(ui.page()==Ui::MarketShopUi::Page::RESULT);
@@ -128,7 +130,9 @@ struct AmoledAppTestAccess {
         for(int i=0;i<14;++i){char name[40];std::snprintf(name,sizeof(name),"carry-up-%02d",i);shot(name);advance(50);}
         tx=app.commitMarketTransaction(t,[](Game::GameState& state){--state.coins;return Game::MarketShop::Result::OK;});
         for(int i=0;i<14;++i){char name[40];std::snprintf(name,sizeof(name),"carry-down-%02d",i);shot(name);advance(50);}
-        assert(s.coins==999);s.coins=UINT32_MAX;enter(352);shot("07-max-balance");
+        assert(s.coins==999);s.coins=9999999;enter(352);shot("07-max-balance");
+        tap(312,32); assert(ui.page()==Ui::MarketShopUi::Page::MENU && app.marketCoinMotion_.frame().exact);
+        shot("07-max-exact"); advance(2100); assert(!app.marketCoinMotion_.frame().exact);
         assert(!app.marketCoinMotion_.frame().tags[0].visible);
         s.coins=5000;enter(352);blobs.delayNextMs=1000;
         tx=app.commitMarketTransaction(t,[](Game::GameState& state){state.coins-=100;return Game::MarketShop::Result::OK;});

@@ -18,6 +18,7 @@
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
 #include "game/BondSystem.h"
+#include "game/CoinWallet.h"
 #include "game/ContactRoster.h"
 #include "game/ExploreItemProgression.h"
 #include "game/ExploreDestinations.h"
@@ -1421,10 +1422,10 @@ bool GameEngine::spendCoins(uint32_t amount) {
     return true;
 }
 
-void GameEngine::addCoins(uint32_t amount) {
-    uint64_t total = static_cast<uint64_t>(state.coins) + amount;
-    state.coins = total > 99999 ? 99999 : static_cast<uint32_t>(total);
+uint32_t GameEngine::addCoins(uint32_t amount) {
+    const uint32_t credited = Game::CoinWallet::credit(state, amount);
     markDirty(SaveUrgency::SOON);
+    return credited;
 }
 
 bool GameEngine::candyPurchaseAvailable() {

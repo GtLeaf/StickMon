@@ -75,12 +75,15 @@ public:
             return layout_.round&&page_==Page::DIALOGUE&&!pending_&&greeting_.update(elapsed);
         openingMs_=std::min(MOTION_MS,openingMs_+elapsed);return true;
     }
-    Request touch(const Platform::IInputDevice::TouchEvent& e,const Game::GameState& state){
+    Request touch(const Platform::IInputDevice::TouchEvent& e,const Game::GameState& state, MarketCoinMotion* coins=nullptr){
         if(!active()||pending_||exiting()||openingMs_<MOTION_MS){cancelTouch();return Request::NONE;}
         if(e.x<0||e.y<0||e.x>=layout_.width||e.y>=layout_.height||
            (layout_.round&&(e.x-180)*(e.x-180)+(e.y-180)*(e.y-180)>=180*180)){
             cancelTouch();return Request::NONE;
         }
+        const bool showsBalance = page_ != Page::REWARD && !(layout_.round && page_ == Page::DIALOGUE);
+        if (showsBalance && MarketCoinHud::inspect(e,coins,16,32,layout_.round ? MarketCoinHud::ROUND : MarketCoinHud::Layout{}))
+            return Request::NONE;
         if(page_==Page::FURNITURE){
             const int target=layout_.furnitureBack().contains(e.x,e.y) ? BACK :
                              layout_.panel().contains(e.x,e.y) ? -1 : OUTSIDE;

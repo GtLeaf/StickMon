@@ -727,6 +727,7 @@ void ExploreScene::cancelTouch() {
     photo_.cancelTouch();
     marketMenuTap_.cancel();
     marketMenuOwnsTouch_ = false;
+    marketCoins_.cancelTouch();
     marketShopUi_.cancelTouch();
     marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();marketWorkshopUi_.cancelTouch();
     marketStallClockMs_ = Hal::ins().millis();
@@ -754,13 +755,13 @@ bool ExploreScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
             if (!Platform::display().locked() && !market_->paused() && !market_->exiting() && !GameEngine::ins().sceneFadeActive()) {
                 if(marketWorkshopUi_.active()){
                     const bool exiting=marketWorkshopUi_.exiting();
-                    const auto request=marketWorkshopUi_.touch(event,GameEngine::ins().gameState());
+                    const auto request=marketWorkshopUi_.touch(event,GameEngine::ins().gameState(), &marketCoins_);
                     if(!exiting&&marketWorkshopUi_.exiting())marketStallClockMs_=Hal::ins().millis();
                     commitMarketWorkshop(request,event.timestampMs);
                 }
-                else if(marketCareUi_.active())commitMarketCare(marketCareUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
-                else if(marketTutorUi_.active())commitMarketTutor(marketTutorUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
-                else commitMarketShop(marketShopUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
+                else if(marketCareUi_.active())commitMarketCare(marketCareUi_.touch(event,GameEngine::ins().gameState(), &marketCoins_),event.timestampMs);
+                else if(marketTutorUi_.active())commitMarketTutor(marketTutorUi_.touch(event,GameEngine::ins().gameState(), &marketCoins_),event.timestampMs);
+                else commitMarketShop(marketShopUi_.touch(event,GameEngine::ins().gameState(), &marketCoins_),event.timestampMs);
             } else {marketShopUi_.cancelTouch();marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();marketWorkshopUi_.cancelTouch();}
             return true;
         }
@@ -1405,9 +1406,9 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
     if (pickupId == Pickup::COIN) {
         const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
         uint32_t coins = GameRandom::random(map.pickups.minCoin, (uint32_t)map.pickups.maxCoin + 1);
-        GameEngine::ins().addCoins(coins);
+        const uint32_t credited = GameEngine::ins().addCoins(coins);
         snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::PICKUP_COIN_FMT,
-                 (unsigned long)coins);
+                 static_cast<unsigned long>(credited));
         resultMessage = resultBuf;
         autoWalkActive = false;
         phase = Phase::PICKUP;
@@ -1470,10 +1471,10 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
         } else if (routePickupFinalReward) {
             const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
             uint32_t coins = GameRandom::random(map.pickups.minCoin, (uint32_t)map.pickups.maxCoin + 1);
-            GameEngine::ins().addCoins(coins);
+            const uint32_t credited = GameEngine::ins().addCoins(coins);
             snprintf(resultBuf, sizeof(resultBuf),
                      Ui::Explore::PICKUP_COIN_FMT,
-                     static_cast<unsigned long>(coins));
+                     static_cast<unsigned long>(credited));
         } else {
             snprintf(resultBuf, sizeof(resultBuf), "%s", Ui::Shop::BAG_FULL);
         }
@@ -2458,9 +2459,9 @@ void ExploreScene::finishWildFaint() {
 
     uint8_t coinReward = ExploreBoss::victoryCoinReward(battleIsBoss);
     if (coinReward > 0) {
-        engine.addCoins(coinReward);
+        const uint32_t credited = engine.addCoins(coinReward);
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::COIN_GAIN_FMT,
-                 static_cast<unsigned>(coinReward));
+                 static_cast<unsigned>(credited));
         enqueueBattleLog(logBuf);
     }
     markFirstSpecialVictory();

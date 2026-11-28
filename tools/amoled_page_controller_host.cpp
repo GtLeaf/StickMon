@@ -510,6 +510,10 @@ void bagUse(Fixture& f) {
 
 void shopTransactions(Fixture& f) {
     f.enter(Scene::SHOP);
+    f.tap(184, 38);
+    const auto exact = f.pixels;
+    f.advance(2100);
+    assert(f.scene() == Scene::SHOP && f.pixels != exact);
     f.tap(50, 230);
     f.tap(180, 174);
     const auto detail = f.pixels;

@@ -23,6 +23,7 @@ int itemListItemAt(int x, int y, float scroll, uint8_t dailyItemCount,
                    bool exploreOnly = false);
 float itemListMaxScroll(uint8_t dailyItemCount, uint8_t exploreItemCount,
                         uint8_t itemCount, bool exploreOnly = false);
+bool shopBalanceAt(int x, int y, uint32_t coins);
 int shopMenuItemAt(int x, int y);
 int shopGridItemAt(int x, int y, float scroll,
                    ShopViewModel::Mode mode, uint8_t dailyItemCount,

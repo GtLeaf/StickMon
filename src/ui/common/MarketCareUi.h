@@ -134,11 +134,12 @@ public:
         }
     }
 
-    Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
+    Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state, MarketCoinMotion* coins = nullptr) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
         scrollOnly_ = false;
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
+        if (page_ != Page::GREET && MarketCoinHud::inspect(e,coins,16+hudOffset())) return none;
         if (page_ == Page::GREET || page_ == Page::SHOW) {
             // Lifting the finger anywhere advances; it never lands on a row.
             if (tap_.update(e, 0) != 0) return none;

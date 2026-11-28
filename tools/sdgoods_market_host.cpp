@@ -192,6 +192,10 @@ static void journeyTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& blob
     blobs.failAll=true;j.open(false);assert(state.marketSeason.periodDay==Game::MARKET_PERIOD_NONE);j.shot("00-init-failed");
     j.tap(180,190);assert(scene.marketShopUi_.page()==Page::ERROR);j.tap(180,308);j.advance(600);assert(!scene.market_->conversing());blobs.failAll=false;
     j.open();j.shot("01-home");renderContract(scene.marketShopUi_,state);
+    j.tap(180,32);
+    assert(scene.marketShopUi_.page()==Page::MENU && scene.marketCoins_.frame().exact);
+    j.advance(2100);
+    assert(!scene.marketCoins_.frame().exact);
     j.shelf();j.shot("02-shelf");renderContract(scene.marketShopUi_,state);
     j.tap(180,182);assert(scene.marketShopUi_.page()==Page::CONFIRM);j.shot("03-detail");renderContract(scene.marketShopUi_,state);
     const auto before=state;const auto id=Game::MarketShop::item(state,0);const auto qty=Game::ItemInventory::count(state,id);const auto price=Game::MarketShop::priceForSlot(state,0);

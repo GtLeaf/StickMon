@@ -1,6 +1,7 @@
 #include "app/ExploreSession.h"
 
 #include <algorithm>
+#include "game/CoinWallet.h"
 #include "game/ExploreAreaCatalog.h"
 #include "game/ExploreBoss.h"
 #include "game/ExploreBossPity.h"
@@ -551,9 +552,8 @@ void ExploreSession::resolvePickup(Game::GameState& gameState) {
     if (state_.exploreRoutePickupItem == ExplorePickupRules::COIN) {
         uint32_t coins = GameRandom::range(table.minCoin,
                                            static_cast<uint32_t>(table.maxCoin) + 1);
-        gameState.coins += coins;
         effects_.notice = Notice::COINS;
-        effects_.coins = coins;
+        effects_.coins = Game::CoinWallet::credit(gameState, coins);
         effects_.save = true;
         return;
     }

@@ -103,12 +103,14 @@ struct AmoledAppTestAccess {
             route.exploreRoutePickupIndex = 1;
             route.exploreRoutePickupItem = 1;  // Coin.
             if (automatic) session.setAutoWalk(true); else session.walkByPlayer();
+            if (automatic) game.coins = 9'999'998;
             const auto coins = game.coins;
             assert(session.beginStep(game));
             session.completeStep(game, 360);
             const auto pickup = session.takeEffects();
             assert(pickup.notice == ExploreSession::Notice::COINS && pickup.save);
             assert(game.coins == coins + pickup.coins);
+            if (automatic) assert(pickup.coins == 1);
             assert(pickup.startStep == automatic);
             assert(route.exploreRouteAutoWalk == automatic && !route.exploreRoutePlayerWalkActive);
             session.resolvePickup(game);

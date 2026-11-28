@@ -84,8 +84,9 @@ bool MenuScene::activateDebug(Ui::DebugAction action, uint16_t value) {
         return changed;
     }
     case Ui::DebugAction::ADD_COINS:
-        engine.addCoins(1000);
-        pageNotice(Ui::Debug::COINS_ADDED);
+        snprintf(toastBuffer, sizeof(toastBuffer), Ui::Debug::COINS_ADDED_FMT,
+                 static_cast<unsigned long>(engine.addCoins(1000)));
+        pageNotice(toastBuffer);
         break;
     case Ui::DebugAction::SET_TIME:
         engine.debugAdvanceToTimeOfDay(value);

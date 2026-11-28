@@ -233,7 +233,7 @@ public:
     uint32_t grantBathReward(BathRewardStage stage);
     uint16_t applyBathCompletionRecovery(uint8_t score);
     bool spendCoins(uint32_t amount);
-    void addCoins(uint32_t amount);
+    uint32_t addCoins(uint32_t amount);
     bool recordFriendContact(const Game::MonsterRuntime& monster,
                              uint8_t metArea,
                              uint8_t* contactSlot = nullptr,

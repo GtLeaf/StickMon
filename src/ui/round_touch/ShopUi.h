@@ -20,7 +20,7 @@ public:
     bool onTap(int target) override;
     bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
     void cancelTouch() override;
-    static MenuGrid::Rect coinBounds() { return {206, 56, 88, 36}; }
+    static MenuGrid::Rect coinBounds() { return {202, 56, 92, 36}; }
     static MenuGrid::Rect actionBounds() { return RoundItemDetail::ACTION; }
     static MenuGrid::Rect detailBackBounds() { return RoundItemDetail::BACK; }
     MenuGrid::Rect tabBounds(int index) const;

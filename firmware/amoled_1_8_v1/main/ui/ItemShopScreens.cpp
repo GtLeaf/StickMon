@@ -1,3 +1,4 @@
+#include "ui/common/CoinLabel.h"
 #include "ui/ItemShopScreens.h"
 
 #include <algorithm>
@@ -181,6 +182,12 @@ bool shopGridItemCenter(int index, float scroll, ShopViewModel::Mode mode,
 
 }  // namespace
 
+bool shopBalanceAt(int x, int y, uint32_t coins) {
+    if (y < 0 || y >= MENU_CONTENT_TOP) return false;
+    const int halfWidth = (Ui::CoinLabel(coins).cells() + 1) * 8 + 8;
+    return std::abs(x - AmoledUi::WIDTH / 2) <= halfWidth;
+}
+
 int shopMenuItemAt(int x, int y) {
     if (x < 0 || x >= SHOP_RAIL_DIVIDER_X) return -1;
     for (int index = 0; index < 2; ++index) {
@@ -338,9 +345,8 @@ void renderItemListScreen(Canvas565& canvas,
         pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (bottom - rowBegin));
         canvas.fillRect((0), (0), (AmoledUi::WIDTH), (MENU_CONTENT_TOP), UiMetrics::PAGE_BACKGROUND);
         if (model.mode != ItemListMode::BAG) {
-            char coins[16];
-            std::snprintf(coins, sizeof(coins), "C%lu",
-                          static_cast<unsigned long>(model.coins));
+            char coins[20];
+            std::snprintf(coins, sizeof(coins), "C%s", Ui::CoinLabel(model.coins).text);
             UiCommon::drawPageHeader(canvas, Ui::SHOP, coins,
                                      !detailOpen);
         } else {

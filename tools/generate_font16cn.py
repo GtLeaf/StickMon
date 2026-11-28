@@ -141,7 +141,7 @@ def load_unscii_glyphs(path):
     return glyphs
 
 
-def normalize_unscii_glyph(bitmap):
+def normalize_unscii_glyph(ch, bitmap):
     """Center Unscii ink in an 8-pixel cell with a stable max width."""
     img = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
     for row, value in enumerate(bitmap[::2]):
@@ -155,8 +155,10 @@ def normalize_unscii_glyph(bitmap):
 
     left, _, right, _ = bbox
     ink = img.crop((left, 0, right, FONT_GLYPH_H))
-    if ink.width > ASCII_DRAW_W:
-        ink = ink.resize((ASCII_DRAW_W, FONT_GLYPH_H), Image.Resampling.NEAREST)
+    # Narrowing the seven-column w removes its middle stroke at both UI sizes.
+    draw_width = ASCII_CELL_W if ch == "w" else ASCII_DRAW_W
+    if ink.width > draw_width:
+        ink = ink.resize((draw_width, FONT_GLYPH_H), Image.Resampling.NEAREST)
 
     normalized = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
     x = (ASCII_CELL_W - ink.width) // 2
@@ -443,7 +445,7 @@ def main():
     write_pack_font(
         PACK_FONT_UNSCII_ASCII_OUT,
         UNSCII_CHARS,
-        lambda ch: normalize_unscii_glyph(unscii_glyphs[ch]),
+        lambda ch: normalize_unscii_glyph(ch, unscii_glyphs[ch]),
     )
     write_pack_font(
         PACK_FONT_LARGE_REGULAR_OUT,
@@ -457,7 +459,7 @@ def main():
         PACK_FONT_LARGE_ASCII_OUT,
         UNSCII_CHARS,
         lambda ch: upscale_unscii_glyph(
-            normalize_unscii_glyph(unscii_glyphs[ch])
+            normalize_unscii_glyph(ch, unscii_glyphs[ch])
         ),
         LARGE_FONT_GLYPH_W,
         LARGE_FONT_GLYPH_H,
