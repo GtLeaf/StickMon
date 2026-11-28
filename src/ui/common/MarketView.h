@@ -10,6 +10,7 @@
 #include "game/ExploreDaylight.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/PokemonShadow.h"
+#include "presentation/PokemonAnimationView.h"
 #include "ui/SceneSurface.h"
 
 namespace Ui::MarketView {
@@ -167,10 +168,26 @@ inline int sortedPoses(const Market::Session& session,Market::Pose* poses,uint8_
 
 inline bool prepareActor(const Market::Session& session,const Viewport& v,uint32_t now,int cx,int cy,
                          const Market::Pose& p,ActorDraw& a) {
+    using PokemonSprites::SpriteKind;
     PokemonSprites::WalkingAnimation animation{};
     const PokemonSprites::SpriteFrame* sprite=nullptr;bool flip=false;
-    if(PokemonSprites::walkingAnimation(p.species,PokemonSprites::WalkDirection(p.direction),animation)) {
-        const int index=p.moving&&!session.paused()?(now/150)%animation.frameCount:0;
+    if(p.npc&&p.species==225&&p.direction<8) {
+        // The original market visitor uses the five published directions.
+        static constexpr SpriteKind bases[] = {
+            SpriteKind::DELIBIRD_WALKING_FRONT_0, SpriteKind::DELIBIRD_WALKING_LEFT_0,
+            SpriteKind::DELIBIRD_WALKING_BACK_0, SpriteKind::DELIBIRD_WALKING_LEFT_0,
+            SpriteKind::DELIBIRD_WALKING_DOWN_LEFT_0, SpriteKind::DELIBIRD_WALKING_UP_LEFT_0,
+            SpriteKind::DELIBIRD_WALKING_UP_LEFT_0, SpriteKind::DELIBIRD_WALKING_DOWN_LEFT_0,
+        };
+        const auto direction=p.direction;
+        animation={bases[direction],4,direction==3||direction>=6};
+    } else {
+        PokemonAnimationView::animationFor(p.species,PokemonSprites::WalkDirection(p.direction),p.moving,animation);
+    }
+    if(animation.frameCount) {
+        const bool timed=PokemonAnimationTiming::hasTiming(p.species)&&!(p.npc&&p.species==225);
+        const int index=timed?p.animationFrame%animation.frameCount:
+            p.moving&&!session.paused()?(now/150)%animation.frameCount:0;
         sprite=PokemonSprites::findCachedSpeciesSprite(p.species,PokemonSprites::SpriteKind(uint16_t(animation.base)+index));
         flip=animation.flipX;
     }

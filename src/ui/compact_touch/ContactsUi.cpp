@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "ui/compact_touch/ContactsUi.h"
 
 #include "ui/PageProfile.h"
@@ -155,7 +156,7 @@ void ContactsUi::render() {
         else renderActions();
     }
     char capacity[12];
-    std::snprintf(capacity, sizeof(capacity), Ui::Computer::STORAGE_COUNT_FMT, count);
+    std::snprintf(capacity, sizeof(capacity), Ui::Computer::STORAGE_COUNT_FMT, count, Game::StorageCapacity::capacity(state()));
     TouchUi::safePageHeader(Ui::STORAGE, listTouch.pressed() == TARGET_BACK, false, capacity);
 }
 

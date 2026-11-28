@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "core/GameEngine.h"
 #include "presentation/FrameDamage.h"
 #include "core/AudioManager.h"
@@ -626,20 +627,7 @@ bool GameEngine::moveTeamMemberToContacts(uint8_t slot) {
     if (slot >= state.teamCount || slot >= Game::TEAM_CAP) return false;
     if (state.team[slot].origin == Game::Origin::VISITOR) return false;
 
-    int8_t contactSlot = -1;
-    for (uint8_t i = 0;
-         i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
-        if (ContactRoster::sameMonster(state.storage[i], state.team[slot])) {
-            contactSlot = static_cast<int8_t>(i);
-            break;
-        }
-    }
-    if (contactSlot >= 0) {
-        state.storage[contactSlot] = state.team[slot];
-    } else {
-        if (state.storageCount >= Game::STORAGE_CAP) return false;
-        state.storage[state.storageCount++] = state.team[slot];
-    }
+    if(!ContactRoster::storeTeamContact(state,slot))return false;
     for (uint8_t i = slot; i + 1 < state.teamCount && i + 1 < Game::TEAM_CAP; ++i) {
         state.team[i] = state.team[i + 1];
     }

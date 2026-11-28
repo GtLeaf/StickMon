@@ -141,6 +141,11 @@ int HomePresenter::worldToScreenY(const RoomLayout& room, float worldY) const {
 }
 
 void HomePresenter::startSleep(uint16_t speciesId, uint32_t nowMs, uint16_t frameMs) {
+    sleepSpecies_ = speciesId;
+    if (PokemonAnimationTiming::hasTiming(speciesId)) {
+        animationClocks_[0].reset();
+        animationFrame(0, speciesId, PokemonAnimationTiming::Action::Sleep, nowMs);
+    }
     PokemonSprites::PetAnimationProfile profile{};
     PokemonSprites::petAnimationProfile(speciesId, profile);
     uint8_t expanded = 0;

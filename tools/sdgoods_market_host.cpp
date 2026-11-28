@@ -24,6 +24,7 @@
 #include "game/MarketShopService.h"
 #include "game/MarketTransaction.h"
 #include "ui/SceneSurface.h"
+#include "ui/common/MarketView.h"
 #include "presentation/PixelRenderer.h"
 #if __has_include("ui/round_touch/MarketShopUi.h")
 #include "ui/round_touch/MarketShopUi.h"
@@ -107,8 +108,8 @@ struct UiDriver {
     void box(){shelf();event(Type::DOWN,180,280);event(Type::MOVE,180,-80,100);event(Type::UP,180,160,200);
         // Leaving the circle cancels this gesture rather than selecting a row.
         assert(ui.page()==Page::SHELF);
-        for(int n=0;n<4;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}
-        assert(ui.scrollOffset()==412);tap(180,270);assert(ui.page()==Page::CONFIRM&&ui.selected()==Game::MarketShop::BOX);}
+        for(int n=0;n<5;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}
+        assert(ui.scrollOffset()==484);tap(180,198);assert(ui.page()==Page::CONFIRM&&ui.selected()==Game::MarketShop::BOX);}
 };
 static void controllerTests(){
     UiDriver d;assert(d.ui.page()==Page::MENU);d.event(Type::UP,180,190);assert(d.ui.page()==Page::MENU);
@@ -136,7 +137,7 @@ static void controllerTests(){
     b.event(Type::DOWN,180,232);b.event(Type::MOVE,180,200);b.event(Type::UP,180,232);assert(b.ui.page()==Page::BOX_WAIT);
     b.event(Type::DOWN,180,232);b.ui.cancelTouch();b.event(Type::UP,180,232);assert(b.ui.page()==Page::BOX_WAIT);
     b.tap(180,232);assert(b.ui.page()==Page::BOX_OPEN);b.advance(1249);assert(b.ui.page()==Page::BOX_OPEN);b.advance(1);assert(b.ui.page()==Page::RESULT);
-    assert(!std::memcmp(&paid,&b.state,sizeof(paid)));b.event(Type::UP,180,308);assert(b.ui.page()==Page::RESULT);b.tap(180,308);assert(b.ui.page()==Page::SHELF&&b.ui.scrollOffset()==412);
+    assert(!std::memcmp(&paid,&b.state,sizeof(paid)));b.event(Type::UP,180,308);assert(b.ui.page()==Page::RESULT);b.tap(180,308);assert(b.ui.page()==Page::SHELF&&b.ui.scrollOffset()==484);
     std::puts("round-market: native UI inertia/brake/circle, advice, failed save, explicit box and once-only state OK");
 }
 static void capture(const std::string& out,const char* name){
@@ -170,7 +171,7 @@ struct Journey {
         }else assert(scene.marketShopUi_.page()==Page::ERROR);
     }
     void shelf(){tap(180,190);assert(scene.marketShopUi_.page()==Page::SHELF);}
-    void toBox(){for(int n=0;n<4;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}assert(scene.marketShopUi_.scrollOffset()==412);tap(180,270);assert(scene.marketShopUi_.selected()==Game::MarketShop::BOX&&scene.marketShopUi_.page()==Page::CONFIRM);}
+    void toBox(){for(int n=0;n<5;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}assert(scene.marketShopUi_.scrollOffset()==484);tap(180,198);assert(scene.marketShopUi_.selected()==Game::MarketShop::BOX&&scene.marketShopUi_.page()==Page::CONFIRM);}
 };
 template<class Stall> static void renderContract(Stall& ui,const Game::GameState& state,const Ui::MarketCoinMotion* coins=nullptr){
     auto& c=PixelRenderer::canvas();const auto old=Platform::display().frameBuffer();std::vector<uint16_t> pixels(360*360),expected(360*360);
@@ -252,6 +253,26 @@ int main(int argc,char**argv){
     assert(validateContentCatalog() && catalog.healthy());
 #endif
     auto& engine=GameEngine::ins();assert(engine.begin());
+    {
+        using PokemonSprites::SpriteKind;
+        const uint16_t delibird=225;
+        assert(PokemonSprites::preloadDynamicSpecies(&delibird,1));
+        Market::Session market;
+        Market::Pose pose;
+        pose.species=delibird;
+        pose.direction=3;
+        pose.x=180;
+        pose.y=180;
+        pose.moving=true;
+        const Ui::MarketView::Viewport view{360,360,1,true,true};
+        Ui::MarketView::detail::ActorDraw actor;
+        pose.npc=true;
+        assert(Ui::MarketView::detail::prepareActor(market,view,150,0,0,pose,actor));
+        assert(actor.sprite->kind==uint16_t(SpriteKind::DELIBIRD_WALKING_LEFT_1) && actor.flip);
+        pose.npc=false;pose.animationFrame=1; // Timed actors consume the session frame, not render time.
+        assert(Ui::MarketView::detail::prepareActor(market,view,150,0,0,pose,actor));
+        assert(actor.sprite->kind==uint16_t(SpriteKind::DELIBIRD_PET_WALKING_RIGHT_1) && !actor.flip);
+    }
     auto& state=engine.gameState();state.oobeDone=true;state.coins=10000;state.teamCount=1;state.team[0]=Game::MonsterFactory::create(25,25);state.team[0].satiety=100;state.settings.idleTimeoutIndex=4;
 #if HAS_ROUND_MARKET
     if(std::string(argv[3])=="market-lock") {

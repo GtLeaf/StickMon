@@ -118,8 +118,8 @@ inline AirProfile airProfileForSpecies(uint16_t speciesId) {
     case 278: return {10.0f, 2.0f}; // Wingull
     case 279: return {8.0f, 1.5f};  // Pelipper
     case 362: return {10.0f, 2.0f}; // Glalie
-    case 380: return {18.0f, 2.0f}; // Latias
-    case 381: return {18.0f, 2.0f}; // Latios
+    case 380: return {18.0f, 0.0f}; // Latias: original registered frames carry bobbing.
+    case 381: return {18.0f, 0.0f}; // Latios: original registered frames carry bobbing.
     default:  return {0.0f, 0.0f};
     }
 #endif

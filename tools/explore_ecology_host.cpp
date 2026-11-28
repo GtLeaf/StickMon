@@ -14,8 +14,27 @@ using ExploreEcology::Pose;
 
 static void equal(const Simulation& a, const Simulation& b) {
     assert(a.count() == b.count());
-    for (uint8_t i = 0; i < a.count(); ++i)
+    for (uint8_t i = 0; i < a.count(); ++i) {
+        if (!ExploreEcology::samePose(a.pose(i), b.pose(i))) {
+            const auto& x = a.pose(i); const auto& y = b.pose(i);
+            std::fprintf(stderr, "pose mismatch species=%u/%u activity=%u/%u frame=%u/%u animation=%u/%u x=%f/%f y=%f/%f\n",
+                x.speciesId, y.speciesId, unsigned(x.activity), unsigned(y.activity), x.frame, y.frame,
+                x.animationFrame, y.animationFrame, x.x, y.x, x.y, y.y);
+        }
         assert(ExploreEcology::samePose(a.pose(i), b.pose(i)));
+    }
+}
+
+static void equalBehaviorAfterResume(const Simulation& a, const Simulation& b) {
+    // The resumed actor presents its frozen artwork on the first draw; an
+    // uninterrupted reference already consumed the next 100 ms of artwork.
+    // Behavior and effect clocks still advance identically in both runs.
+    assert(a.count() == b.count());
+    for (uint8_t i = 0; i < a.count(); ++i) {
+        auto resumed = b.pose(i);
+        resumed.animationFrame = a.pose(i).animationFrame;
+        assert(ExploreEcology::samePose(a.pose(i), resumed));
+    }
 }
 
 static ExplorePool::Pool pool() {
@@ -62,7 +81,7 @@ static void checkStationaryMetapod() {
                         equal(sim, paused);
                         paused.update(ms + 10100, true, px, py, view);
                         running.update(ms + 100, true, px, py, view);
-                        equal(running, paused);
+                        equalBehaviorAfterResume(running, paused);
                     }
                     sim.update(ms, true, px, py, view);
                     const auto& pose = sim.pose(0);
@@ -157,7 +176,7 @@ static void checkEpisodes() {
                     equal(sim, paused);
                     paused.update(ms + 10100, true, px, py, {0, 0, 416, 312});
                     running.update(ms + 100, true, px, py, {0, 0, 416, 312});
-                    equal(running, paused);
+                    equalBehaviorAfterResume(running, paused);
                     testedPause[unsigned(pose.activity)] = true;
                 }
                 previous = pose.activity;
@@ -228,7 +247,7 @@ static void checkLocomotionAndCover() {
                 equal(sim, paused);
                 paused.update(ms + 30100, true, 0, 0, view);
                 running.update(ms + 100, true, 0, 0, view);
-                equal(paused, running);
+                equalBehaviorAfterResume(paused, running);
             }
         }
         if (flap) assert(flew != isolated);
@@ -365,7 +384,7 @@ static void checkWideFlight() {
                 equal(sim, paused);
                 paused.update(ms + 10100, true, 0, 0, view);
                 running.update(ms + 100, true, 0, 0, view);
-                equal(paused, running);
+                equalBehaviorAfterResume(paused, running);
                 phases[unsigned(pose.activity)] = true;
             }
         }
@@ -643,7 +662,7 @@ static void checkMarillCompositions() {
                     equal(sim, paused);
                     paused.update(ms + 30100, true, -1000, -1000, {0, 0, 416, 312});
                     running.update(ms + 100, true, -1000, -1000, {0, 0, 416, 312});
-                    equal(paused, running);
+                    equalBehaviorAfterResume(paused, running);
                 }
             }
         }
@@ -905,7 +924,7 @@ static void checkGroups() {
                     equal(sim, paused);
                     paused.update(ms + 30100, true, px, py, view);
                     running.update(ms + 100, true, px, py, view);
-                    equal(paused, running);
+                    equalBehaviorAfterResume(paused, running);
                 }
             }
             for (uint8_t i = 0; i < sim.count(); ++i) assert(moved[i] && turns[i]);
@@ -1048,7 +1067,7 @@ static void checkCaveBatGroups() {
                 equal(sim, paused);
                 paused.update(ms + 30100, true, 0, 0, {0, 0, 416, 312});
                 running.update(ms + 100, true, 0, 0, {0, 0, 416, 312});
-                equal(paused, running);
+                equalBehaviorAfterResume(paused, running);
             }
         }
         const auto before = sim.pose(0);
@@ -1087,14 +1106,24 @@ static void checkCaveBatGroups() {
 static void checkEncounterHabitat() {
     using namespace ExploreMapGenerator;
     const auto valley = ExploreEncounters::tableForArea(ANCIENT_WATERFALL_VALLEY_AREA);
+    const auto allowsSpecies = [](ExploreEncounters::Table table, uint8_t habitat, uint16_t species) {
+        const auto candidates = ExploreEncounters::battleCandidates(table, {}, habitat);
+        for (uint8_t i = 0; i < candidates.count; ++i)
+            if (candidates.entries[i].entry->speciesId == species) return true;
+        return false;
+    };
     const ExplorePool::Pool fish{{{130, 3, ExplorePool::Rarity::RARE, ExploreHabitat::OPEN_WATER}}, 1};
     Map map{};
     assert(generateValleyRegion(1, {0, 0}, false, map));
     assert(map.habitat == 0);
     assert(!ExploreEncounters::battleCandidates(valley, fish, map.habitat).total);
+    for (uint16_t species : {299, 302, 340, 342})
+        assert(!allowsSpecies(valley, map.habitat, species));
     assert(generateValleyRegion(1, {7, 0}, false, map));
     assert(map.habitat == (ExploreHabitat::CAVE | ExploreHabitat::OPEN_WATER));
     assert(ExploreEncounters::battleCandidates(valley, fish, map.habitat).total == 9);
+    for (uint16_t species : {299, 302, 340, 342})
+        assert(allowsSpecies(valley, map.habitat, species));
     assert(generateValleyRegion(1, {6, 0}, false, map));
     assert(map.habitat == (ExploreHabitat::CAVE | ExploreHabitat::OPEN_WATER));
     assert(ExploreEncounters::battleCandidates(valley, fish, map.habitat).total == 9);
@@ -1104,6 +1133,26 @@ static void checkEncounterHabitat() {
     std::fill_n(dryCave.layers[0], CELL_COUNT, 4744);
     assert(ExploreTileSemantics::encounterHabitat(dryCave) == ExploreHabitat::CAVE);
     assert(!ExploreEncounters::battleCandidates(valley, fish, ExploreHabitat::CAVE).total);
+    for (uint16_t species : {299, 302}) {
+        assert(allowsSpecies(valley, ExploreHabitat::CAVE, species));
+        assert(!allowsSpecies(valley, ExploreHabitat::OPEN_WATER, species));
+    }
+    for (uint16_t species : {340, 342}) {
+        assert(allowsSpecies(valley, ExploreHabitat::OPEN_WATER, species));
+        assert(!allowsSpecies(valley, ExploreHabitat::CAVE, species));
+    }
+
+    const auto creek = ExploreEncounters::tableForArea(CREEK_BRIDGE_SLOPE_AREA);
+    bool foundWetCreek = false;
+    for (uint32_t seed = 1; seed <= 32 && !foundWetCreek; ++seed) {
+        foundWetCreek = generate(seed, Edge::BOTTOM, CREEK_BRIDGE_SLOPE_AREA, map) &&
+                        (map.habitat & ExploreHabitat::OPEN_WATER);
+    }
+    assert(foundWetCreek);
+    for (uint16_t species : {339, 341}) {
+        assert(allowsSpecies(creek, map.habitat, species));
+        assert(!allowsSpecies(creek, 0, species));
+    }
 
     // Only the far corner contains water, well away from all route points.
     map = {};
@@ -1120,7 +1169,10 @@ static void checkEncounterHabitat() {
     map.layers[2][CELL_COUNT - 1] = 1532;
     assert(ExploreTileSemantics::encounterHabitat(map) == 0);
     map.layers[2][CELL_COUNT - 1] = 0;
-    assert(ExploreTileSemantics::encounterHabitat(map) == ExploreHabitat::OPEN_WATER);
+    const uint8_t farWaterHabitat = ExploreTileSemantics::encounterHabitat(map);
+    assert(farWaterHabitat == ExploreHabitat::OPEN_WATER);
+    assert(allowsSpecies(creek, farWaterHabitat, 339));
+    assert(allowsSpecies(creek, farWaterHabitat, 341));
 
     // Preserve the surviving actor's hidden bit when a pool member is removed.
     const ExplorePool::Pool active{{{129, 8, ExplorePool::Rarity::NORMAL, ExploreHabitat::OPEN_WATER},
@@ -1186,7 +1238,7 @@ int main() {
             hidden += initial[i].hidden;
             waterActors += initial[i].surface == ExploreEcology::Surface::WATER;
             if (initial[i].surface == ExploreEcology::Surface::WATER && !initial[i].airborne)
-                assert(initial[i].speciesId == 129 || initial[i].speciesId == 130);
+                assert(ExploreEcology::waterOnlySpecies(initial[i].speciesId));
             iceActors += initial[i].surface == ExploreEcology::Surface::ICE;
             rockActors += initial[i].surface == ExploreEcology::Surface::ROCK;
         }
@@ -1206,7 +1258,7 @@ int main() {
             for (uint8_t i = 0; i < first.count(); ++i) {
                 const auto& pose = first.pose(i);
                 if (pose.surface == ExploreEcology::Surface::WATER && !pose.airborne)
-                    assert(pose.speciesId == 129 || pose.speciesId == 130);
+                    assert(ExploreEcology::waterOnlySpecies(pose.speciesId));
                 episodes += ExploreEcology::isEpisode(pose.activity);
                 if (pose.hidden) {
                     assert(!ExploreEcology::isEpisode(pose.activity));
@@ -1281,20 +1333,23 @@ int main() {
     empty.reset(map, 0, fishPool, 0, 0);
     assert(empty.count() == 1 && empty.pose(0).speciesId == 129);
     assert(!empty.canOccupy(74, 7, 3));
-    // Aquatic mammals, turtles, amphibians and dragons remain on land.
+    // Water-themed mammals, turtles, amphibians, dragons and crayfish remain on land.
     for (uint16_t species : {uint16_t(7), uint16_t(8), uint16_t(9), uint16_t(134),
             uint16_t(147), uint16_t(148), uint16_t(183), uint16_t(184),
-            uint16_t(194), uint16_t(195), uint16_t(298)}) {
+            uint16_t(194), uint16_t(195), uint16_t(298), uint16_t(341), uint16_t(342)}) {
         auto nonFish = fishPool;
         nonFish.count = 1;
         nonFish.entries[0].speciesId = species;
         empty.reset(map, 0, nonFish, 0, 0);
         assert(empty.count() == 0 && !empty.canOccupy(species, 7, 3));
     }
-    for (uint16_t species : {uint16_t(129), uint16_t(130)}) {
+    for (uint16_t species : {uint16_t(129), uint16_t(130), uint16_t(339), uint16_t(340)}) {
         auto fish = fishPool;
         fish.count = 1;
         fish.entries[0].speciesId = species;
+        std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, 385);
+        empty.reset(map, 0, fish, 0, 0);
+        assert(empty.count() == 0 && !empty.canOccupy(species, 7, 3));
         for (uint16_t base : {uint16_t(48), uint16_t(144), uint16_t(1097)}) {
             std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, base);
             // A continuous narrow river passing under a two-row bridge.

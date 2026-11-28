@@ -82,6 +82,7 @@ public:
     void setOtaWriteProtection(bool value) { otaWriteProtection_ = value; }
     bool initialize() override;
     size_t blobSize(const char*, const char*) override;
+    bool hasAuthoritativeLookup() const override { return true; }
     Platform::BlobLookup lookupBlob(const char*, const char*, size_t&) override;
     bool readBlob(const char*, const char*, void*, size_t) override;
     bool writeBlob(const char*, const char*, const void*, size_t) override;

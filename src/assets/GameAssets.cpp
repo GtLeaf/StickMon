@@ -147,7 +147,7 @@ PackSlot packSlotFor(Kind kind) {
         kind == Kind::ITEM_HEART_SCALE ||
         (kind >= Kind::ITEM48_POKE_BALL && kind <= Kind::ITEM48_SOAP_2) ||
         kind == Kind::EXPLORE_PICKUP_BALL || kind == Kind::MARKET_CHAT || kind == Kind::MARKET_MYSTERY_BOX ||
-        (kind >= Kind::MARKET_ITEM_HP_UP && kind <= Kind::MARKET_ITEM_LUM_BERRY)) {
+        (kind >= Kind::MARKET_ITEM_HP_UP && kind <= Kind::MARKET_ITEM_COMPUTER_EXPANSION)) {
         return PackSlot::UI;
     }
     if (kind == Kind::EGG) return PackSlot::HATCH;
@@ -1061,6 +1061,7 @@ Kind itemKind(Game::ItemId item) {
     case Game::ItemId::ORAN_BERRY: return Kind::MARKET_ITEM_ORAN_BERRY;
     case Game::ItemId::SITRUS_BERRY: return Kind::MARKET_ITEM_SITRUS_BERRY;
     case Game::ItemId::LUM_BERRY: return Kind::MARKET_ITEM_LUM_BERRY;
+    case Game::ItemId::COMPUTER_EXPANSION: return Kind::MARKET_ITEM_COMPUTER_EXPANSION;
     case Game::ItemId::SOAP_0: return Kind::SHOWER_SOAP_0;
     case Game::ItemId::SOAP_1: return Kind::SHOWER_SOAP_1;
     case Game::ItemId::SOAP_2: return Kind::SHOWER_SOAP_2;
@@ -1075,7 +1076,7 @@ bool drawItemIcon48(Game::ItemId item, int centerX, int centerY) {
         native = static_cast<Kind>(static_cast<uint16_t>(Kind::ITEM48_POKE_BALL) +
                                    static_cast<uint16_t>(original));
     } else if (original == Kind::ITEM_HEART_SCALE) native = Kind::ITEM48_HEART_SCALE;
-    else if (original >= Kind::MARKET_ITEM_HP_UP && original <= Kind::MARKET_ITEM_LUM_BERRY) {
+    else if (original >= Kind::MARKET_ITEM_HP_UP && original <= Kind::MARKET_ITEM_COMPUTER_EXPANSION) {
         return drawCentered(original, centerX, centerY);
     }
     else if (original >= Kind::SHOWER_SOAP_0 && original <= Kind::SHOWER_SOAP_2) {

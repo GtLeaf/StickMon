@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "ui/common/TeamUi.h"
 #include "core/UiStrings.h"
 
@@ -29,7 +30,7 @@ void TeamUi::activateAction(TeamAction action) {
             host.pageNotice(Ui::Menu::SWITCH_TOAST);
         }
     } else if (action == TeamAction::LEAVE) {
-        const bool contactsFull = host.pageState().storageCount >= Game::STORAGE_CAP;
+        const bool contactsFull = host.pageState().storageCount >= Game::StorageCapacity::capacity(host.pageState());
         const bool lastMonster = host.pageState().teamCount <= 1;
         if (host.leaveTeam(teamCursor)) {
             const auto count = host.pageState().teamCount;

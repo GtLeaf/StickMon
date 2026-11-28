@@ -7,6 +7,7 @@
 #include "game/ExploreDestinations.h"
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
+#include "game/PokemonAnimationTiming.h"
 #include "game/Species.h"
 #include "presentation/MenuGrid.h"
 
@@ -56,6 +57,9 @@ struct ExploreRouteVisualState {
     bool areaBackgroundTraced = false;
     uint8_t routeVisualWalkDirection = 0;
     uint8_t routeFollowerVisualWalkDirection = 0;
+    PokemonAnimationTiming::Clock partyAnimation[2];
+    PokemonAnimationTiming::Action partyAction[2]{};
+    bool partyAnimationActive = true;
 };
 
 // A view of the current scene. Map and sprite resources remain host-owned.

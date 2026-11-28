@@ -73,7 +73,19 @@ int main(int argc,char** argv) {
         profiles.push_back(p);
     }
     emitSpan(7,profiles.data(),profiles.size());
+#if STICKMON_EXTERNAL_CONTENT
     emit(8,PMD_SPRITE_CONFIGS);
+#else
+    std::vector<PmdSpriteConfig> roomProfiles(std::begin(PMD_SPRITE_CONFIGS), std::end(PMD_SPRITE_CONFIGS));
+    const auto& expansion = PokemonSprites::EXPANSION_ROOM_PROFILES;
+    for (const auto& profile : expansion) {
+        auto existing = std::find_if(roomProfiles.begin(), roomProfiles.end(),
+            [&](const auto& old) { return old.speciesId == profile.speciesId; });
+        if (existing == roomProfiles.end()) roomProfiles.push_back(profile);
+        else *existing = profile;
+    }
+    emitSpan(8,roomProfiles.data(),roomProfiles.size());
+#endif
     std::vector<SpeciesAbility> abilities;
     for(const auto& s:SPECIES) abilities.push_back({s.id,abilityForSpecies(s)});
     emitSpan(9,abilities.data(),abilities.size());
@@ -86,7 +98,7 @@ int main(int argc,char** argv) {
     emit(51,Game::ShopService::DAILY_ITEMS);emit(52,Game::ShopService::EXPLORE_ITEMS);emit(53,Game::ShopService::SELL_ITEMS);
     emit(29,ExploreEcology::GROUP_FAMILIES);
     std::vector<ExploreEcology::Profile> ecology;
-    for(const auto& c:PokemonSprites::WALKING_CONFIGS) ecology.push_back({c.speciesId,ExploreEcology::temperamentForSpecies(c.speciesId),ExploreEcology::locomotionForSpecies(c.speciesId),ExploreEcology::wideFlightSpecies(c.speciesId),c.speciesId==129 || c.speciesId==130});
+    for(const auto& c:PokemonSprites::WALKING_CONFIGS) ecology.push_back({c.speciesId,ExploreEcology::temperamentForSpecies(c.speciesId),ExploreEcology::locomotionForSpecies(c.speciesId),ExploreEcology::wideFlightSpecies(c.speciesId),ExploreEcology::waterOnlySpecies(c.speciesId)});
     emitSpan(28,ecology.data(),ecology.size());
     emit(25,PokemonBattleSizes::FRONT);
     std::vector<PokemonMotion::Profile> motion;

@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "app/BattleSession.h"
 #include "core/UiStrings.h"
 #include "game/CareTicker.h"
@@ -719,7 +720,7 @@ void BattleSession::resolveBattleFriendship(Game::GameState& gameState, uint8_t 
             return;
         }
         uint8_t contactSlot = 0xFF;
-        if (gameState.storageCount >= Game::STORAGE_CAP) {
+        if (gameState.storageCount >= Game::StorageCapacity::capacity(gameState)) {
             state_.battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::FULL;
             std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                           Ui::Amoled::BOX_FULL);

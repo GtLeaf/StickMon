@@ -17,29 +17,53 @@ using Rarity = ExplorePool::Rarity;
 struct TestTable {
     const Entry* entries;
     uint8_t count;
-    uint8_t expectedCommon;
-    uint8_t expectedRare;
+    uint8_t minLevel;
+    uint8_t maxLevel;
+    uint8_t availableHabitat;
+    uint8_t minimumHabitat = 0;
 };
 
 #define TABLE_COUNT(t) static_cast<uint8_t>(sizeof(t) / sizeof(t[0]))
 const TestTable TABLES[] = {
     {ExploreEncounters::GRASS_PATH,
-     TABLE_COUNT(ExploreEncounters::GRASS_PATH), 7, 3},
+     TABLE_COUNT(ExploreEncounters::GRASS_PATH), 1, 9, 0},
     {ExploreEncounters::CREEK_SLOPE,
-     TABLE_COUNT(ExploreEncounters::CREEK_SLOPE), 12, 3},
+     TABLE_COUNT(ExploreEncounters::CREEK_SLOPE), 7, 17, ExploreHabitat::OPEN_WATER},
     {ExploreEncounters::TALL_GRASS_PARK,
-     TABLE_COUNT(ExploreEncounters::TALL_GRASS_PARK), 11, 8},
+     TABLE_COUNT(ExploreEncounters::TALL_GRASS_PARK), 17, 27, ExploreHabitat::OPEN_WATER},
     {ExploreEncounters::FROST_CRYSTAL_CAVE,
-     TABLE_COUNT(ExploreEncounters::FROST_CRYSTAL_CAVE), 10, 3},
+     TABLE_COUNT(ExploreEncounters::FROST_CRYSTAL_CAVE), 28, 42,
+     ExploreHabitat::CAVE, ExploreHabitat::CAVE},
     {ExploreEncounters::MIST_FOREST_PATH,
-     TABLE_COUNT(ExploreEncounters::MIST_FOREST_PATH), 6, 7},
+     TABLE_COUNT(ExploreEncounters::MIST_FOREST_PATH), 41, 53, 0},
     {ExploreEncounters::ANCIENT_WATERFALL_VALLEY,
-     TABLE_COUNT(ExploreEncounters::ANCIENT_WATERFALL_VALLEY), 9, 5},
+     TABLE_COUNT(ExploreEncounters::ANCIENT_WATERFALL_VALLEY), 53, 67,
+     ExploreHabitat::OPEN_WATER | ExploreHabitat::CAVE},
 };
 #undef TABLE_COUNT
 
 constexpr uint8_t AREA_COUNT =
     static_cast<uint8_t>(sizeof(TABLES) / sizeof(TABLES[0]));
+
+const uint16_t EXPANSION_SPECIES[] = {
+    124, 214, 215, 220, 221, 225, 238, 263, 264, 265, 266, 267, 268, 269,
+    270, 271, 272, 273, 274, 275, 299, 302, 339, 340, 341, 342, 355, 356, 359,
+};
+
+struct EvolutionRange {
+    uint16_t speciesId;
+    uint8_t firstLevel;
+    uint8_t lastLevel;
+};
+
+constexpr EvolutionRange EXPANSION_EVOLUTION_RANGES[] = {
+    {124, 30, 100}, {220, 1, 32}, {221, 33, 100}, {238, 1, 29},
+    {263, 1, 19}, {264, 20, 100}, {265, 1, 6}, {266, 7, 9},
+    {267, 10, 100}, {268, 7, 9}, {269, 10, 100}, {270, 1, 13},
+    {271, 14, 100}, {272, 14, 100}, {273, 1, 13}, {274, 14, 100},
+    {275, 14, 100}, {339, 1, 29}, {340, 30, 100}, {341, 1, 29},
+    {342, 30, 100}, {355, 1, 36}, {356, 37, 100},
+};
 
 uint8_t toSource(const TestTable& table, ExplorePool::SourceEntry* out) {
     for (uint8_t i = 0; i < table.count; ++i) {
@@ -163,20 +187,37 @@ int main() {
 
     // 3. 六区数据约束：权重、等级、分池容量、跨区稀有度和特殊终段隔离。
     constexpr uint8_t weights[] = {12, 8, 5, 3, 2, 1};
-    uint16_t seenSpecies[128] = {};
-    Rarity seenRarity[128] = {};
+    uint16_t seenSpecies[AREA_COUNT * ExplorePool::MAX_SOURCE_ENTRIES] = {};
+    Rarity seenRarity[AREA_COUNT * ExplorePool::MAX_SOURCE_ENTRIES] = {};
     uint8_t seenCount = 0;
     const uint16_t forbidden[] = {76, 94, 169, 212};
     for (uint8_t area = 0; area < AREA_COUNT; ++area) {
+        const auto& testTable = TABLES[area];
+        if (testTable.count > ExplorePool::MAX_SOURCE_ENTRIES)
+            return fail(39, "area exceeds encounter table capacity", area);
+        if (ExploreEncounters::battleCandidates(ExploreEncounters::tableForArea(area),
+                                               {}, testTable.minimumHabitat).count < 15) {
+            return fail(40, "at least 15 species even without optional terrain", area);
+        }
         uint8_t commons = 0;
         uint8_t rares = 0;
-        for (uint8_t i = 0; i < TABLES[area].count; ++i) {
-            const Entry& entry = TABLES[area].entries[i];
+        for (uint8_t i = 0; i < testTable.count; ++i) {
+            const Entry& entry = testTable.entries[i];
             if (entry.weight() != weights[static_cast<uint8_t>(entry.rarity())])
                 return fail(6, "entry weight must derive from its rarity", entry.speciesId);
             if (entry.minLevel < 1 || entry.minLevel > entry.maxLevel ||
                 entry.maxLevel > Game::LEVEL_MAX) {
                 return fail(3, "invalid encounter level range", entry.speciesId);
+            }
+            if (entry.minLevel < testTable.minLevel || entry.maxLevel > testTable.maxLevel)
+                return fail(41, "encounter level outside its area band", entry.speciesId);
+            if (!ExploreHabitat::matches(entry.habitat, testTable.availableHabitat))
+                return fail(42, "encounter habitat unavailable in its area", entry.speciesId);
+            for (const auto& range : EXPANSION_EVOLUTION_RANGES) {
+                if (entry.speciesId == range.speciesId &&
+                    (entry.minLevel < range.firstLevel || entry.maxLevel > range.lastLevel)) {
+                    return fail(43, "encounter level outside its evolution stage", entry.speciesId);
+                }
             }
             ExplorePool::isRare(entry.rarity()) ? ++rares : ++commons;
 
@@ -206,10 +247,14 @@ int main() {
                 ++seenCount;
             }
         }
-        if (commons != TABLES[area].expectedCommon ||
-            rares != TABLES[area].expectedRare) {
-            return fail(7, "pool sizes mismatch v2.3 document", area);
+        if (commons < ExplorePool::BASE_SLOTS_MAX || rares < 2) {
+            return fail(7, "area must support full ordinary and rare slots", area);
         }
+    }
+    for (uint16_t species : EXPANSION_SPECIES) {
+        bool present = false;
+        for (uint8_t i = 0; i < seenCount; ++i) present |= seenSpecies[i] == species;
+        if (!present) return fail(44, "expansion species missing from all areas", species);
     }
 
     // 区域条目复用物种稀有度。
@@ -229,6 +274,7 @@ int main() {
             encounterTable.count != sourceCount) {
             return fail(36, "shared encounter table selection", area);
         }
+        bool reachable[ExplorePool::MAX_SOURCE_ENTRIES] = {};
         for (uint32_t seedIndex = 0; seedIndex < 2000; ++seedIndex) {
             uint32_t seed = ExplorePool::mixSeed(seedIndex, area, 0);
             ExplorePool::Pool pool =
@@ -239,6 +285,16 @@ int main() {
             }
             if (pool.count < 4 || pool.count > ExplorePool::POOL_CAP) {
                 return fail(9, "pool size out of 4..6", area);
+            }
+            if (!ExploreEncounters::battleCandidates(
+                    encounterTable, pool, TABLES[area].minimumHabitat).total) {
+                return fail(45, "habitat filters eliminated the whole active pool", area);
+            }
+            const auto eligible = ExploreEncounters::battleCandidates(
+                encounterTable, pool, TABLES[area].availableHabitat);
+            for (uint8_t i = 0; i < eligible.count; ++i) {
+                const auto index = eligible.entries[i].entry - encounterTable.entries;
+                reachable[index] = true;
             }
 
             uint8_t commonSlots = 0;
@@ -296,6 +352,9 @@ int main() {
             if (!samePool(pool, rebuilt)) {
                 return fail(17, "same seed must rebuild same pool", area);
             }
+        }
+        for (uint8_t i = 0; i < sourceCount; ++i) {
+            if (!reachable[i]) return fail(46, "entry never reached by rotation", source[i].speciesId);
         }
     }
 

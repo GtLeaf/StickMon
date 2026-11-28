@@ -417,6 +417,104 @@ struct AmoledAppTestAccess {
         assert(!other.takeDamage().valid);
     }
 
+    static void originalRouteAnimationTiming() {
+        using PokemonAnimationTiming::Action;
+        ExploreSession session;
+        Game::GameState game;
+        fixture(session, game);
+        game.team[0] = Game::MonsterFactory::create(264, 30);
+        game.team[1] = Game::MonsterFactory::create(355, 30);
+        auto& route = session.state_;
+        route.exploreRouteBossPending = false;
+        ExplorePresenter presenter;
+        presenter.startRun(0);
+        presenter.resetMap(route, game, 0, 0, 0);
+        unsigned char before[sizeof(game)];
+        std::memcpy(before, &game, sizeof(game));
+        bool fullIdle = false;
+        for (uint32_t now = 100; now <= 1800; now += 100) {
+            presenter.recordDrawn(presenter.model(route, game, 0, now));
+            presenter.updateMotion(route, game, 0, now);
+            const auto model = presenter.model(route, game, 0, now);
+            assert(model.petFrame == PokemonAnimationTiming::frameAt(264, Action::Idle, now));
+            assert(model.companionFrame == PokemonAnimationTiming::frameAt(355, Action::Idle, now));
+            assert(!model.walking && !model.companionWalking);
+            fullIdle |= model.petFrame > 5;
+            presenter.takeDamage();
+        }
+        assert(fullIdle);
+        route.exploreRouteMoving = true;
+        route.exploreRouteIndex = 3;
+        presenter.beginStep(route, 2000);
+        for (uint32_t now = 2000; now <= 2900; now += 100) {
+            if (now % 300 == 200) presenter.beginStep(route, now);
+            presenter.updateMotion(route, game, 0, now);
+            const auto model = presenter.model(route, game, 0, now);
+            assert(model.walking && model.companionWalking);
+            assert(model.petFrame == PokemonAnimationTiming::frameAt(264, Action::Walk, now - 2000));
+            assert(model.companionFrame == PokemonAnimationTiming::frameAt(355, Action::Walk, now - 2000));
+            presenter.state_.exploreRouteDirection = (presenter.state_.exploreRouteDirection + 1) % 4;
+        }
+        const auto frozen = presenter.model(route, game, 0, 2900);
+        route.exploreRoutePaused = true;
+        presenter.updateEcology(route, game, 0, false, 3000);
+        presenter.updateEcology(route, game, 0, false, 10000);
+        auto model = presenter.model(route, game, 0, 10000);
+        assert(model.walking && model.petFrame == frozen.petFrame);
+        assert(model.companionWalking && model.companionFrame == frozen.companionFrame);
+        presenter.resume(route, 7000, 10000);
+        route.exploreRoutePaused = false;
+        presenter.updateMotion(route, game, 0, 10000);
+        model = presenter.model(route, game, 0, 10000);
+        assert(model.petFrame == frozen.petFrame && model.companionFrame == frozen.companionFrame);
+        route.exploreRouteMoving = false;
+        // Session completion may request a draw before the next presenter tick.
+        model = presenter.model(route, game, 0, 10000);
+        assert(!model.walking && model.petFrame == 0);
+        assert(!model.companionWalking && model.companionFrame == 0);
+        presenter.updateMotion(route, game, 0, 10100);
+        model = presenter.model(route, game, 0, 10100);
+        assert(!model.walking && !model.companionWalking);
+        assert(model.petFrame == 0 && model.companionFrame == 0);
+        assert(std::memcmp(before, &game, sizeof(game)) == 0);
+        game.team[0] = Game::MonsterFactory::create(214, 30);
+        presenter.updateMotion(route, game, 0, 10200);
+        assert(presenter.model(route, game, 0, 10200).petFrame == 0);
+        // Former hop, slither, start/hold/end and airborne profiles now share
+        // the source clock; route steps and facing never restart artwork.
+        for (const uint16_t species : {1, 11, 41, 93, 94, 147, 148}) {
+            ExploreSession sampleSession;
+            Game::GameState sampleGame;
+            fixture(sampleSession, sampleGame);
+            sampleGame.team[0] = sampleGame.team[1] = Game::MonsterFactory::create(species, 30);
+            auto& sampleRoute = sampleSession.state_;
+            sampleRoute.exploreRouteBossPending = false;
+            ExplorePresenter samplePresenter;
+            samplePresenter.startRun(0);
+            samplePresenter.resetMap(sampleRoute, sampleGame, 0, 0, 0);
+            assert(PokemonAnimationTiming::hasTiming(species));
+            for (const bool walking : {false, true}) {
+                const uint32_t start = walking ? 11000 : 0;
+                sampleRoute.exploreRouteMoving = walking;
+                sampleRoute.exploreRouteIndex = 3;
+                for (uint32_t elapsed = 0; elapsed <= 10000; elapsed += 100) {
+                    if (walking && elapsed % 300 == 0)
+                        samplePresenter.beginStep(sampleRoute, start + elapsed);
+                    samplePresenter.state_.exploreRouteDirection = (elapsed / 100) % 4;
+                    samplePresenter.updateMotion(sampleRoute, sampleGame, 0, start + elapsed);
+                    const auto sampleModel = samplePresenter.model(sampleRoute, sampleGame, 0, start + elapsed);
+                    const auto expected = PokemonAnimationTiming::frameAt(species,
+                        walking ? Action::Walk : Action::Idle, elapsed);
+                    if (sampleModel.petFrame != expected || sampleModel.companionFrame != expected)
+                        std::fprintf(stderr, "species=%u walking=%u elapsed=%u expected=%u main=%u companion=%u\n",
+                            species, unsigned(walking), elapsed, expected, sampleModel.petFrame, sampleModel.companionFrame);
+                    assert(sampleModel.petFrame == expected && sampleModel.companionFrame == expected);
+                }
+            }
+        }
+        std::puts("route timing: idle/walk full source phases, direction/step continuity, pause/resume, species/action resets and unchanged gameplay verified");
+    }
+
     static void returnSettlement() {
         ExploreSession session, other;
         Game::GameState game, otherGame;
@@ -629,6 +727,7 @@ int main(int argc, char** argv) {
     else if (std::strcmp(argv[2], "encounters") == 0) Probe::encountersAndItems();
     else if (std::strcmp(argv[2], "pause-ice") == 0) Probe::iceAndPause(desktop);
     else if (std::strcmp(argv[2], "settlement") == 0) Probe::returnSettlement();
+    else if (std::strcmp(argv[2], "animation-timing") == 0) Probe::originalRouteAnimationTiming();
     else if (std::strcmp(argv[2], "presenter") == 0) Probe::presenterContract();
     else if (std::strcmp(argv[2], "menu-return") == 0) Probe::menuReturn(desktop);
     else if (std::strcmp(argv[2], "battle-clock") == 0) Probe::battleReturnClock(desktop);

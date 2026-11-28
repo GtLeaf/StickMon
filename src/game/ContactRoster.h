@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "game/GameState.h"
+#include "game/StorageCapacity.h"
 
 namespace ContactRoster {
 
@@ -13,6 +14,14 @@ inline bool sameMonster(const Game::MonsterRuntime& lhs,
            lhs.metAt == rhs.metAt &&
            lhs.metArea == rhs.metArea &&
            lhs.origin == rhs.origin;
+}
+
+inline bool storeTeamContact(Game::GameState& state,uint8_t teamSlot){
+    if(teamSlot>=state.teamCount||teamSlot>=Game::TEAM_CAP)return false;
+    for(uint8_t i=0;i<state.storageCount&&i<Game::STORAGE_CAP;++i)
+        if(sameMonster(state.storage[i],state.team[teamSlot])){state.storage[i]=state.team[teamSlot];return true;}
+    if(state.storageCount>=Game::StorageCapacity::capacity(state))return false;
+    state.storage[state.storageCount++]=state.team[teamSlot];return true;
 }
 
 inline int8_t teamSlotForContact(const Game::GameState& state,

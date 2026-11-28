@@ -22,7 +22,7 @@ inline constexpr Entry ITEMS[] = {
     {ItemId::SITRUS_BERRY,60,1,"文柚果","恢复30点HP"},
     {ItemId::LUM_BERRY,100,2,"木子果","治愈异常状态"},
 };
-inline constexpr bool contains(ItemId id) { return id >= ItemId::HP_UP && id < ItemId::COUNT; }
+inline constexpr bool contains(ItemId id) { return id >= ItemId::HP_UP && id <= ItemId::LUM_BERRY; }
 inline const Entry* find(ItemId id) { return contains(id) ? &ITEMS[uint8_t(id)-uint8_t(ItemId::HP_UP)] : nullptr; }
 inline constexpr bool nutrient(ItemId id) { return id >= ItemId::HP_UP && id <= ItemId::CARBOS; }
 inline constexpr bool resetBerry(ItemId id) { return id >= ItemId::POMEG_BERRY && id <= ItemId::TAMATO_BERRY; }

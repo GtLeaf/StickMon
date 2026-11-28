@@ -71,6 +71,7 @@ bool exploreRouteBossPatrolMoving(uint32_t nowMs) {
 
 void ExplorePresenter::reset() {
     state_.exploreEcology = ExploreEcology::Simulation{};
+    for (auto& animation : partyAnimation_) animation = {};
     damage_ = {};
     invalidateDrawn();
 }
@@ -83,6 +84,7 @@ void ExplorePresenter::updateDaylight(uint32_t gameMinutes, uint8_t area) {
 }
 
 void ExplorePresenter::startRun(uint32_t nowMs) {
+    for (auto& animation : partyAnimation_) animation = {};
     state_.exploreRouteExitStartedMs = state_.exploreRouteExitDurationMs = 0;
     state_.exploreRoutePetFrame = state_.exploreRouteMapFrame = 0;
     state_.nextExploreRouteFrameMs = nowMs;
@@ -93,6 +95,7 @@ void ExplorePresenter::startRun(uint32_t nowMs) {
 
 void ExplorePresenter::resetMap(const ExploreSession::State& route,
     const Game::GameState& gameState, uint8_t area, uint8_t hiddenPoolMask, uint32_t nowMs) {
+    for (auto& animation : partyAnimation_) animation = {};
     const auto& path = route.exploreRouteMap.paths[route.exploreRoutePath];
     state_.exploreRouteFollowerMoving = false;
     state_.exploreRouteDirection = exploreInwardDirection(route.exploreRouteMap.entry.edge);
@@ -154,6 +157,7 @@ void ExplorePresenter::resetMap(const ExploreSession::State& route,
                          hiddenPoolMask, nowMs);
     state_.exploreGrass.reset(nowMs);
     state_.exploreRouteDaylight = ExploreDaylight::at(gameState.gameMinutesTotal, area);
+    updatePartyAnimation(route, gameState, nowMs, true);
     invalidateDrawn();
     damage_ = {};
 }
@@ -246,6 +250,30 @@ void ExplorePresenter::beginExit(const ExploreSession::State& route, bool hasFol
     state_.exploreRouteFollowerMoving = hasFollower && followerDistance > 0.01f;
 }
 
+bool ExplorePresenter::updatePartyAnimation(const ExploreSession::State& route,
+    const Game::GameState& gameState, uint32_t nowMs, bool active) {
+    const uint16_t species[] = {gameState.team[ExploreSession::leaderSlot(gameState)].speciesId,
+        ExploreSession::hasCompanion(gameState) ? gameState.team[1].speciesId : uint16_t(0)};
+    bool changed = false;
+    for (uint8_t i = 0; i < 2; ++i) {
+        auto& animation = partyAnimation_[i];
+        const auto previousAction = animation.action;
+        const auto previousSpecies = animation.species;
+        if (active) {
+            animation.species = species[i];
+            animation.action = route.exploreRouteMoving && (!i || state_.exploreRouteFollowerMoving)
+                ? PokemonAnimationTiming::Action::Walk : PokemonAnimationTiming::Action::Idle;
+        }
+        const uint8_t frame = animation.clock.update(animation.species, animation.action, nowMs, active);
+        if (active && (previousAction != animation.action || previousSpecies != animation.species ||
+            static_cast<int32_t>(nowMs - state_.nextExploreRouteFrameMs) >= 0)) {
+            changed |= PokemonAnimationTiming::hasTiming(animation.species) && frame != animation.frame;
+            animation.frame = frame;
+        }
+    }
+    return changed;
+}
+
 bool ExplorePresenter::advanceWalkFrames(const ExploreSession::State& route, uint32_t nowMs) {
     if (!route.exploreRouteMoving ||
         static_cast<int32_t>(nowMs - state_.nextExploreRouteFrameMs) < 0) {
@@ -262,6 +290,7 @@ bool ExplorePresenter::advanceWalkFrames(const ExploreSession::State& route, uin
 
 void ExplorePresenter::updateEcology(const ExploreSession::State& route,
     const Game::GameState& gameState, uint8_t area, bool active, uint32_t nowMs) {
+    if (!active && !route.exploreRouteExiting) updatePartyAnimation(route, gameState, nowMs, false);
     ExploreEcology::Pose before[ExploreEcology::CAPACITY];
     for (uint8_t i = 0; i < state_.exploreEcology.count(); ++i)
         before[i] = state_.exploreEcology.pose(i);
@@ -328,6 +357,7 @@ ExplorePresenter::Motion ExplorePresenter::updateMotion(const ExploreSession::St
     const Game::GameState& gameState, uint8_t area, uint32_t nowMs) {
     if (route.exploreRoutePaused || route.exploreRouteComplete ||
         route.exploreRoutePendingFrostFall) return Motion::NONE;
+    const bool partyChanged = updatePartyAnimation(route, gameState, nowMs, true);
     if (route.exploreRouteExiting) {
         advanceWalkFrames(route, nowMs);
         const uint32_t elapsed = nowMs - state_.exploreRouteExitStartedMs;
@@ -364,13 +394,19 @@ ExplorePresenter::Motion ExplorePresenter::updateMotion(const ExploreSession::St
     if (route.exploreRouteBossPending &&
         static_cast<int32_t>(nowMs - state_.nextExploreRouteBossFrameMs) >= 0) {
         const bool bossMoving = exploreRouteBossPatrolMoving(nowMs);
-        if (bossMoving || state_.exploreRouteBossWasMoving) {
+        if (bossMoving || state_.exploreRouteBossWasMoving ||
+            PokemonAnimationTiming::hasTiming(route.exploreRouteBossSpeciesId)) {
             requestBossDamage(route);
         }
         state_.exploreRouteBossWasMoving = bossMoving;
         state_.nextExploreRouteBossFrameMs = nowMs + EXPLORE_ROUTE_BOSS_FRAME_MS;
     }
-    if (!route.exploreRouteMoving) return Motion::NONE;
+    if (!route.exploreRouteMoving) {
+        if (partyChanged) requestDynamicDamage(model(route, gameState, area, nowMs));
+        if (static_cast<int32_t>(nowMs - state_.nextExploreRouteFrameMs) >= 0)
+            state_.nextExploreRouteFrameMs = nowMs + EXPLORE_ROUTE_FRAME_MS;
+        return Motion::NONE;
+    }
 
     uint32_t elapsed = nowMs - state_.exploreRouteMoveStartedMs;
     float progress = std::min(
@@ -449,7 +485,11 @@ ExploreRouteViewModel ExplorePresenter::model(const ExploreSession::State& route
             route.exploreRouteMap.paths[route.exploreRoutePath].pointCount;
     }
     model.walkDirection = state_.exploreRouteDirection;
-    model.petFrame = state_.exploreRoutePetFrame;
+    const auto leaderAction = route.exploreRouteMoving
+        ? PokemonAnimationTiming::Action::Walk : PokemonAnimationTiming::Action::Idle;
+    model.petFrame = PokemonAnimationTiming::hasTiming(model.speciesId)
+        ? (partyAnimation_[0].species == model.speciesId && partyAnimation_[0].action == leaderAction
+            ? partyAnimation_[0].frame : 0) : state_.exploreRoutePetFrame;
     model.mapFrame = state_.exploreRouteMapFrame;
     model.animationNowMs = nowMs;
     model.steps = route.exploreRouteSteps;
@@ -461,11 +501,19 @@ ExploreRouteViewModel ExplorePresenter::model(const ExploreSession::State& route
     model.companionWorldX = state_.exploreRouteFollowerWorldX;
     model.companionWorldY = state_.exploreRouteFollowerWorldY;
     model.companionWalkDirection = state_.exploreRouteFollowerDirection;
-    model.companionFrame = state_.exploreRouteFollowerFrame;
-    model.companionWalking = state_.exploreRouteFollowerMoving;
+    const auto companionAction = route.exploreRouteMoving && state_.exploreRouteFollowerMoving
+        ? PokemonAnimationTiming::Action::Walk : PokemonAnimationTiming::Action::Idle;
+    model.companionFrame = PokemonAnimationTiming::hasTiming(model.companionSpeciesId)
+        ? (partyAnimation_[1].species == model.companionSpeciesId && partyAnimation_[1].action == companionAction
+            ? partyAnimation_[1].frame : 0) : state_.exploreRouteFollowerFrame;
+    model.companionWalking = PokemonAnimationTiming::hasTiming(model.companionSpeciesId)
+        ? companionAction == PokemonAnimationTiming::Action::Walk
+        : state_.exploreRouteFollowerMoving;
     model.cameraX = state_.exploreRouteCameraX;
     model.cameraY = state_.exploreRouteCameraY;
-    model.walking = route.exploreRouteMoving && !route.exploreRoutePaused;
+    model.walking = PokemonAnimationTiming::hasTiming(model.speciesId)
+        ? leaderAction == PokemonAnimationTiming::Action::Walk
+        : route.exploreRouteMoving && !route.exploreRoutePaused;
     model.autoWalk = route.exploreRouteAutoWalk && !route.exploreRoutePaused;
     model.sliding = route.exploreRouteIceSliding;
     model.complete = route.exploreRouteComplete;
@@ -573,6 +621,8 @@ void ExplorePresenter::updateCamera() {
 }
 
 void ExplorePresenter::resume(const ExploreSession::State& route, uint32_t paused, uint32_t nowMs) {
+    for (auto& animation : partyAnimation_)
+        animation.clock.update(animation.species, animation.action, nowMs, false);
     if (route.exploreRouteMoving) state_.exploreRouteMoveStartedMs += paused;
     if (route.exploreRouteExiting) state_.exploreRouteExitStartedMs += paused;
     state_.nextExploreRouteMapFrameMs += paused;

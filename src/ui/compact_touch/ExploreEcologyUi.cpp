@@ -96,7 +96,7 @@ const PokemonSprites::SpriteFrame* wildlifeFrame(const ExploreEcology::Pose& pos
             if (count) {
                 const auto kind = static_cast<SpriteKind>(
                     static_cast<uint16_t>(sleeping ? profile.sleepingBase : profile.idleBase) +
-                    (sleeping ? 0 : direction * count) + pose.frame % count);
+                    (sleeping ? 0 : direction * count) + pose.artworkFrame() % count);
                 if (const auto* frame = findCachedSpeciesSprite(pose.speciesId, kind)) return frame;
             }
         }
@@ -107,7 +107,7 @@ const PokemonSprites::SpriteFrame* wildlifeFrame(const ExploreEcology::Pose& pos
         flip = animation.flipX;
         const auto kind = static_cast<SpriteKind>(static_cast<uint16_t>(animation.base) +
             ((pose.airborne || pose.walking || pose.activity == ExploreEcology::Activity::TAKEOFF ||
-              pose.activity == ExploreEcology::Activity::LAND) ? pose.frame % animation.frameCount : 0));
+              pose.activity == ExploreEcology::Activity::LAND) ? pose.artworkFrame() % animation.frameCount : 0));
         if (const auto* frame = findCachedSpeciesSprite(pose.speciesId, kind)) return frame;
     }
     flip = false;
@@ -170,6 +170,9 @@ void ExploreUi::resetRouteVisual(const ExplorePool::Pool& pool, uint8_t hiddenMa
     if (!frame.generatedMap) return;
     ecology.reset(*frame.generatedMap, frame.currentRoutePath, pool, hiddenMask, frame.nowMs);
     grass.reset(frame.nowMs);
+    routeVisual.partyAnimation[0].reset();
+    routeVisual.partyAnimation[1].reset();
+    routeVisual.partyAnimationActive = true;
     routeVisualActive = true;
     // Warm artwork at map entry. Drawing never decodes grass or species packs.
     artwork.load();
@@ -188,6 +191,13 @@ void ExploreUi::updateRouteVisual(uint32_t nowMs, bool active) {
     // elapsed time on the first resumed frame instead of catching up movement.
     const bool advance = active && routeVisualActive;
     routeVisualActive = active;
+    routeVisual.partyAnimationActive = active || frame.exiting;
+    if (!routeVisual.partyAnimationActive) {
+        const Species* party[] = {frame.leader, frame.follower};
+        for (uint8_t i = 0; i < 2; ++i)
+            routeVisual.partyAnimation[i].update(party[i] ? party[i]->id : 0,
+                routeVisual.partyAction[i], nowMs, false);
+    }
     ecology.update(nowMs, advance, frame.routeWorldX, frame.routeWorldY,
         {float(cameraX), float(cameraY), float(Ui::Page::WIDTH), float(Ui::Page::HEIGHT)});
     const auto grounded = [](uint16_t species) {

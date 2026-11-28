@@ -398,6 +398,9 @@ private:
     void startSleepAnimation(uint32_t nowMs, uint16_t frameMs);
     void updateSleepAnimation(uint32_t nowMs);
     void updatePet(uint32_t nowMs);
+    void updatePetState(uint32_t nowMs);
+    void updateHomeAnimationFrames(uint32_t nowMs, uint8_t previousMainFrame,
+                                   uint8_t previousCompanionFrame, bool active = true);
     void beginVisitDeparture(uint32_t nowMs);
     bool updateVisitDeparture(uint32_t nowMs);
     bool ambientActionAllowed() const;

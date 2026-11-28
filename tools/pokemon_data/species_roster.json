@@ -68,7 +68,7 @@
     380,
     381
   ],
-  "pendingSpeciesIds": [
+  "expansionSpeciesIds": [
     124,
     214,
     215,
@@ -99,7 +99,7 @@
     356,
     359
   ],
-  "pendingMoveExceptions": [
+  "expansionMoveExceptions": [
     "present"
   ]
 }

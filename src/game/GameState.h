@@ -10,10 +10,10 @@ namespace Game {
 using MoveId = uint16_t;
 
 static constexpr uint8_t TEAM_CAP = 2;
-static constexpr uint8_t STORAGE_CAP = 20;
+static constexpr uint8_t STORAGE_CAP = 200;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 12;
+static constexpr uint16_t SAVE_VERSION = 13;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 // debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
 // release 固件忽略这些位但必须原样保留。
@@ -87,6 +87,7 @@ enum class ItemId : uint8_t {
     HP_UP, PROTEIN, IRON, CALCIUM, ZINC, CARBOS,
     POMEG_BERRY, KELPSY_BERRY, QUALOT_BERRY, HONDEW_BERRY, GREPA_BERRY, TAMATO_BERRY,
     MAX_REVIVE, LAVA_COOKIE, ORAN_BERRY, SITRUS_BERRY, LUM_BERRY,
+    COMPUTER_EXPANSION,
     COUNT,
 };
 static_assert(
@@ -386,7 +387,8 @@ struct FriendshipPityState {
     FriendshipPityEntry entries[FRIENDSHIP_PITY_CAPACITY];
 };
 
-struct GameState {
+template<uint8_t StorageSlots>
+struct GameStateLayout {
     uint32_t magic = SAVE_MAGIC;
     uint16_t version = SAVE_VERSION;
     uint16_t checksum = 0;
@@ -396,7 +398,7 @@ struct GameState {
     uint8_t teamCount = 1;
     MonsterRuntime team[TEAM_CAP];
     uint8_t storageCount = 0;
-    MonsterRuntime storage[STORAGE_CAP];
+    MonsterRuntime storage[StorageSlots];
     BagState bag;
     RoomState room;
     uint32_t coins = INITIAL_COINS;
@@ -432,7 +434,7 @@ struct GameState {
     uint8_t debugMotionFlags = 0;
     // v5 append-only extension; the preceding 1572 bytes remain frozen.
     uint32_t careRewardDay = UINT32_MAX;
-    CareRewardRecord careRewards[CARE_REWARD_RECORD_CAP];
+    CareRewardRecord careRewards[TEAM_CAP + StorageSlots];
     // v6 append-only extension: market stall services.
     MarketTutorState marketTutor;
     // v7 append-only extension: Kecleon shelf.
@@ -458,32 +460,35 @@ struct GameState {
     } marketSupply;
     FriendshipPityState friendshipPity;
     uint8_t wallpaperId = 0; // Stable catalog ID; zero is the original room.
+    uint8_t storageUpgrades = 0;
+    uint32_t storageExpansionPeriod = MARKET_PERIOD_NONE;
 };
-static_assert(offsetof(GameState, wallpaperId) == 2540,
-              "v12 wallpaper ID must follow the frozen v11 layout");
-static_assert(offsetof(GameState, careRewardDay) == 1572,
+using GameState = GameStateLayout<STORAGE_CAP>;
+// Frozen pre-expansion layout, used only by raw-save migration.
+using LegacyGameState = GameStateLayout<20>;
+static_assert(offsetof(LegacyGameState, careRewardDay) == 1572,
               "v5 care fields must follow the frozen v4 layout");
-static_assert(offsetof(GameState, marketTutor) == 2368,
+static_assert(offsetof(LegacyGameState, marketTutor) == 2368,
               "v6 market fields must follow the frozen v5 layout");
-static_assert(offsetof(GameState, marketShop) == 2444,
+static_assert(offsetof(LegacyGameState, marketShop) == 2444,
               "v7 market shop fields must follow the frozen v6 layout");
-static_assert(offsetof(GameState, marketCare) == 2456,
+static_assert(offsetof(LegacyGameState, marketCare) == 2456,
               "v8 market care fields must follow the frozen v7 layout");
-static_assert(offsetof(GameState, marketSeason) == 2480,
+static_assert(offsetof(LegacyGameState, marketSeason) == 2480,
               "v9 extension must preserve the frozen v8 prefix");
-static_assert(offsetof(GameState, marketSupply) == 2524,
+static_assert(offsetof(LegacyGameState, marketSupply) == 2524,
               "v10 extension must preserve the frozen v9 prefix");
-static_assert(offsetof(GameState, legacyFriendshipPity) == 1518,
+static_assert(offsetof(LegacyGameState, legacyFriendshipPity) == 1518,
               "legacy raw friendship counters must retain their offset");
-static_assert(offsetof(GameState, friendshipPity) == 2528,
+static_assert(offsetof(LegacyGameState, friendshipPity) == 2528,
               "v11 extension must preserve the frozen v10 prefix");
-static_assert(offsetof(GameState, room) == 1452,
+static_assert(offsetof(LegacyGameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
-static_assert(offsetof(GameState, tutorialFlags) == 1559,
+static_assert(offsetof(LegacyGameState, tutorialFlags) == 1559,
               "tutorial flags must remain in the v1/v2 tail padding byte");
-static_assert(offsetof(GameState, normalBossPitySlotIndex) == 1560,
+static_assert(offsetof(LegacyGameState, normalBossPitySlotIndex) == 1560,
               "v3 fields must remain append-only for v1/v2 migration");
-static_assert(offsetof(GameState, debugMotionFlags) == 1570,
+static_assert(offsetof(LegacyGameState, debugMotionFlags) == 1570,
               "v4 flags must reuse the tail alignment byte after v3 fields");
 
 struct HatchProgress {

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
+#include "assets/PokemonExpansionSpriteProfiles.h"
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
 #include "core/MathUtil.h"
@@ -273,10 +274,17 @@ static constexpr PmdSpriteConfig PMD_SPRITE_CONFIGS[] = {
 #endif
 
 const PmdSpriteConfig* pmdSpriteConfigForSpecies(uint16_t speciesId) {
+#if !STICKMON_EXTERNAL_CONTENT
+    if (const auto* profile = PokemonSprites::expansionRoomProfile(speciesId)) return profile;
+#endif
     for (const auto& config : PMD_SPRITE_CONFIGS) {
         if (config.speciesId == speciesId) return &config;
     }
+#if !STICKMON_EXTERNAL_CONTENT
+    return PokemonSprites::expansionRoomProfile(speciesId);
+#else
     return nullptr;
+#endif
 }
 
 float clampf(float value, float lo, float hi) {
@@ -573,6 +581,8 @@ void MainScene::onEnter() {
     mainActor.geometry.groundOffsetY = mainGeometry().groundOffsetY;
     mainActor.geometry.footprint = mainGeometry().footprint;
     visitor = VisitorActor{};
+    pmdAnimationClock.reset();
+    visitorAnimationClock.reset();
     homeCoordinator.attach(mainActor);
     roomAction = RoomAction::NONE;
     heartEffect = HeartEffect::NONE;
@@ -939,6 +949,7 @@ void MainScene::persistViewState(uint32_t nowMs) {
 
 SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
     const auto result = updateHome(nowMs, dtSeconds);
+    updateVisitorSpriteState(nowMs);
     if (!homeUi.roomVisualFrozen()) return result;
     if (homeOverlayActive()) {
         homeUi.closeTransientOverlay();
@@ -1985,6 +1996,7 @@ void MainScene::clearVisitorMoveRoute() {
 }
 
 void MainScene::deactivateVisitor() {
+    visitorAnimationClock.reset();
     visitArrival.reset();
     homeCoordinator.stop(1, Hal::ins().millis());
     visitor.active = false;
@@ -3445,7 +3457,10 @@ void MainScene::updateDebugTiltControl(uint32_t nowMs, float dtSeconds) {
 
 void MainScene::updatePmdSpriteState(uint32_t nowMs) {
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    if (!config) return;
+    if (!config) {
+        pmdAnimationClock.reset();
+        return;
+    }
     const PokemonMotion::Behavior motionBehavior =
         PokemonMotion::behaviorForSpecies(config->speciesId);
     const bool slithering = motionBehavior.mode == PokemonMotion::Mode::SLITHER;
@@ -3460,6 +3475,18 @@ void MainScene::updatePmdSpriteState(uint32_t nowMs) {
     bool moving = speedSq > PMD_MOVING_SPEED_EPSILON * PMD_MOVING_SPEED_EPSILON;
     PmdAction nextAction = sleeping ? PmdAction::SLEEPING : (moving ? PmdAction::WALKING : PmdAction::IDLE);
     PmdDirection nextDirection = moving ? pmdDirectionForVelocity(mainActor.velocityX, mainActor.velocityY) : pmdDirection;
+    if (PokemonAnimationTiming::hasTiming(config->speciesId)) {
+        const auto action = sleeping ? PokemonAnimationTiming::Action::Sleep
+            : (moving ? PokemonAnimationTiming::Action::Walk
+                      : PokemonAnimationTiming::Action::Idle);
+        pmdAction = nextAction;
+        pmdDirection = nextDirection;
+        pmdRenderOffsetX = pmdRenderOffsetY = 0;
+        pmdFrame = pmdAnimationClock.update(
+            config->speciesId, action, nowMs, !homeUi.roomVisualFrozen());
+        return;
+    }
+    pmdAnimationClock.reset();
     auto resetMoveLength = [&]() {
         float dx = mainActor.targetX - mainActor.x;
         float dy = mainActor.targetY - mainActor.y;
@@ -5976,6 +6003,7 @@ void MainScene::restFaintedVisitor(uint32_t nowMs) {
 }
 
 void MainScene::spawnVisitor(uint32_t nowMs, bool dropIn) {
+    visitorAnimationClock.reset();
     const Game::MonsterRuntime& guest = GameEngine::ins().gameState().team[1];
     visitor = VisitorActor{};
     visitor.reset(Home::ActorRole::TEAMMATE, 1, nowMs);
@@ -6328,6 +6356,8 @@ float MainScene::visitorMoveSpeed(
 }
 
 void MainScene::advanceVisitorFrames(uint32_t nowMs, bool walking) {
+    // Expansion playback is finalized after all actor transitions for this tick.
+    if (PokemonAnimationTiming::hasTiming(visitor.speciesId)) return;
     const PmdSpriteConfig* config =
         pmdSpriteConfigForSpecies(visitor.speciesId);
     const PokemonMotion::Behavior motion =
@@ -6390,7 +6420,8 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
 
     if (visitorMonster.fainted || visitorMonster.hpCur == 0) {
         restFaintedVisitor(nowMs);
-        while (nowMs - visitor.frameStartedMs >= VISITOR_SLEEP_FRAME_MS) {
+        while (!PokemonAnimationTiming::hasTiming(visitor.speciesId) &&
+               nowMs - visitor.frameStartedMs >= VISITOR_SLEEP_FRAME_MS) {
             visitor.frameIndex++;
             visitor.frameStartedMs += VISITOR_SLEEP_FRAME_MS;
         }
@@ -6480,7 +6511,8 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
                 1, VisitorState::SLEEPING, nowMs, 1000, true);
             logVisitorSleepEvent("food_seek_blocked", nowMs, visitorMonster);
         }
-        while (nowMs - visitor.frameStartedMs >= VISITOR_SLEEP_FRAME_MS) {
+        while (!PokemonAnimationTiming::hasTiming(visitor.speciesId) &&
+               nowMs - visitor.frameStartedMs >= VISITOR_SLEEP_FRAME_MS) {
             visitor.frameIndex++;
             visitor.frameStartedMs += VISITOR_SLEEP_FRAME_MS;
         }
@@ -6666,11 +6698,37 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
     advanceVisitorFrames(nowMs, true);
 }
 
+PokemonAnimationTiming::Action MainScene::visitorSpriteAction() const {
+    if (visitor.task == VisitorState::SLEEPING && visitor.dropOffsetY <= 0.0f)
+        return PokemonAnimationTiming::Action::Sleep;
+    const bool walking = (visitor.task == VisitorState::WALK ||
+                    visitor.task == VisitorState::DOOR_ACTION ||
+                    visitor.task == VisitorState::SEEK_FOOD ||
+                    visitor.task == VisitorState::GO_TO_SLEEP ||
+                    visitor.task == VisitorState::YIELDING_BED ||
+                    (visitor.task == VisitorState::PAIR_ACTION &&
+                     visitor.route.index < visitor.route.count)) &&
+                   visitor.dropOffsetY <= 0.0f;
+    return walking ? PokemonAnimationTiming::Action::Walk
+                   : PokemonAnimationTiming::Action::Idle;
+}
+
+void MainScene::updateVisitorSpriteState(uint32_t nowMs) {
+    if (!visitor.active || !PokemonAnimationTiming::hasTiming(visitor.speciesId)) {
+        visitorAnimationClock.reset();
+        return;
+    }
+    visitor.renderOffsetX = visitor.renderOffsetY = 0;
+    visitor.frameIndex = visitorAnimationClock.update(
+        visitor.speciesId, visitorSpriteAction(), nowMs,
+        !homeUi.roomVisualFrozen());
+}
+
 const PokemonSprites::SpriteFrame* MainScene::visitorCurrentFrame(bool& flipX) const {
     flipX = false;
     if (!visitor.active) return nullptr;
-    bool sleeping = visitor.task == VisitorState::SLEEPING && visitor.dropOffsetY <= 0.0f;
-    if (sleeping) {
+    const auto action = visitorSpriteAction();
+    if (action == PokemonAnimationTiming::Action::Sleep) {
         if (const PmdSpriteConfig* config = pmdSpriteConfigForSpecies(visitor.speciesId)) {
             uint8_t frameCount = config->sleepingFrames == 0 ? 1 : config->sleepingFrames;
             const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(
@@ -6682,15 +6740,7 @@ const PokemonSprites::SpriteFrame* MainScene::visitorCurrentFrame(bool& flipX) c
         flipX = visitor.facingRight;
         return PokemonSprites::findSpeciesSprite(visitor.speciesId, PokemonSprites::SpriteKind::FRONT);
     }
-    bool walking = (visitor.task == VisitorState::WALK ||
-                    visitor.task == VisitorState::DOOR_ACTION ||
-                    visitor.task == VisitorState::SEEK_FOOD ||
-                    visitor.task == VisitorState::GO_TO_SLEEP ||
-                    visitor.task == VisitorState::YIELDING_BED ||
-                    (visitor.task == VisitorState::PAIR_ACTION &&
-                     visitor.route.index < visitor.route.count)) &&
-                   visitor.dropOffsetY <= 0.0f;
-    if (walking) {
+    if (action == PokemonAnimationTiming::Action::Walk) {
         PokemonSprites::WalkingAnimation animation{};
         if (PokemonSprites::walkingAnimation(visitor.speciesId, visitor.direction, animation)) {
             uint8_t frameCount = animation.frameCount == 0 ? 1 : animation.frameCount;

@@ -6,16 +6,24 @@
 #include "game/MarketSchedule.h"
 #include "game/MarketSupply.h"
 #include "game/ShopService.h"
+#include "game/StorageCapacity.h"
 
 namespace Game::MarketShop {
 constexpr uint16_t STALL_SPECIES = 352;
 enum Slot : uint8_t { DISCOUNT_A, DISCOUNT_B, CANDY, NUTRIENT, RESET_BERRY, SPECIAL, RARE, BOX };
 constexpr uint8_t ROW_COUNT = 8;
+constexpr uint8_t EXPANSION = ROW_COUNT;
+inline uint8_t rowCount(const GameState& s) { return ROW_COUNT + (StorageCapacity::canExpand(s) ? 1 : 0); }
+inline uint8_t stock(const GameState& s, uint8_t slot) {
+    if (slot == EXPANSION) return StorageCapacity::canExpand(s) && s.marketSeason.periodDay != MARKET_PERIOD_NONE && s.storageExpansionPeriod != s.marketSeason.periodDay ? 1 : 0;
+    return slot < ROW_COUNT ? s.marketSeason.stock[slot] : 0;
+}
 constexpr uint16_t BOX_PRICE = 300;
 struct Reward { ItemId item = ItemId::COUNT; uint8_t amount = 0; };
 enum class Result : uint8_t { OK, STALE, BAD_SLOT, SOLD_OUT, LOCKED, NO_COINS, BAG_FULL, DAILY_LIMIT };
 inline uint32_t periodDay(const GameState& s) { return MarketSchedule::periodDay(s); }
 inline ItemId item(const GameState& s, uint8_t slot) {
+    if (slot == EXPANSION) return ItemId::COMPUTER_EXPANSION;
     if (slot >= ROW_COUNT || slot == BOX) return ItemId::COUNT;
     return s.marketSeason.items[slot] < uint8_t(ItemId::COUNT) ? ItemId(s.marketSeason.items[slot]) : ItemId::COUNT;
 }
@@ -37,6 +45,10 @@ inline uint16_t price(ItemId id) {
     }
 }
 inline uint16_t priceForSlot(const GameState& s,uint8_t slot) {
+    if (slot == EXPANSION) {
+        const unsigned level = s.storageUpgrades - (s.storageUpgrades && s.storageExpansionPeriod == s.marketSeason.periodDay ? 1 : 0);
+        return uint16_t(1000 + 1500*std::min<unsigned>(level,8));
+    }
     return slot == BOX ? BOX_PRICE : price(item(s,slot));
 }
 inline uint32_t mix(uint32_t x) { x^=x>>16; x*=0x7feb352dU; x^=x>>15; x*=0x846ca68bU; x^=x>>16; return x?x:1; }
@@ -126,23 +138,25 @@ inline bool ensurePeriod(GameState& s) {
     }
     return true;
 }
-inline bool soldOut(const GameState& s){for(auto stock:s.marketSeason.stock)if(stock)return false;return true;}
+inline bool soldOut(const GameState& s){for(auto stock:s.marketSeason.stock)if(stock)return false;return !stock(s,EXPANSION);}
 inline Result check(const GameState& s,uint8_t slot,uint32_t period){
     if(!MarketSchedule::isOpen(s)||s.marketSeason.periodDay!=period||period!=periodDay(s))return Result::STALE;
-    if(slot>=ROW_COUNT)return Result::BAD_SLOT;
+    if(slot>=rowCount(s))return Result::BAD_SLOT;
     Reward r{item(s,slot),1};
     if(slot==BOX){if(!boxRoll(s)||boxRoll(s)>100)return Result::STALE;r=boxReward(s);}
     else if(r.item==ItemId::COUNT)return Result::LOCKED;
     if(!unlocked(s,r.item))return Result::LOCKED;
-    if(!s.marketSeason.stock[slot])return Result::SOLD_OUT;
-    if(unsigned(ItemInventory::count(s,r.item))+r.amount>ITEM_STACK_CAP)return Result::BAG_FULL;
+    if(!stock(s,slot))return Result::SOLD_OUT;
+    if(slot!=EXPANSION&&unsigned(ItemInventory::count(s,r.item))+r.amount>ITEM_STACK_CAP)return Result::BAG_FULL;
     return s.coins<priceForSlot(s,slot)?Result::NO_COINS:Result::OK;
 }
 inline Result buy(GameState& s,uint8_t slot,uint32_t period,Reward* granted=nullptr){
     const auto result=check(s,slot,period);if(result!=Result::OK)return result;
     const Reward r=slot==BOX?boxReward(s):Reward{item(s,slot),1};
-    if(!ItemInventory::add(s,r.item,r.amount))return Result::BAG_FULL;
-    s.coins-=priceForSlot(s,slot);--s.marketSeason.stock[slot];
+    const auto cost=priceForSlot(s,slot);
+    if(slot==EXPANSION) { ++s.storageUpgrades; s.storageExpansionPeriod=period; }
+    else { if(!ItemInventory::add(s,r.item,r.amount))return Result::BAG_FULL; --s.marketSeason.stock[slot]; }
+    s.coins-=cost;
     if(granted)*granted=r;
     return Result::OK;
 }

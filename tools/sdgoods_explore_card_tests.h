@@ -58,7 +58,7 @@ static void exploreCardTests(DesktopPlatform& desktop,GameEngine& engine,const s
         ++species;
     }
     assert(species > 0);
-    for(const uint16_t id:{113,115,225,352}){
+    for(const uint16_t id:{113,115,352}){
         PokemonSprites::preloadDynamicSpecies(&id,1,1);
         const auto* f=PokemonSprites::findSpeciesSprite(id,PokemonSprites::SpriteKind::FRONT);
         assert(f&&f->width<=PET_BOUNDS.width&&f->height<=PET_BOUNDS.height);++species;

@@ -17,6 +17,7 @@
 #include "game/HomeVisitArrival.h"
 #include "game/HomeVisitDeparture.h"
 #include "game/Species.h"
+#include "game/PokemonAnimationTiming.h"
 
 struct PetResult;
 
@@ -413,6 +414,8 @@ private:
     uint32_t visitorIdleDelayMs(const MonsterBehaviorProfile& profile) const;
     float visitorMoveSpeed(const MonsterBehaviorProfile& profile,
                            bool purposeful) const;
+    PokemonAnimationTiming::Action visitorSpriteAction() const;
+    void updateVisitorSpriteState(uint32_t nowMs);
     const PokemonSprites::SpriteFrame* visitorCurrentFrame(bool& flipX) const;
     Ui::HomeUi homeUi;
     Ui::HomeFrame homeFrame() const override;
@@ -441,6 +444,8 @@ private:
     uint16_t pmdMotionCycleMs = PokemonMotion::SLITHER_AMBIENT_MAX_CYCLE_MS;
     bool pmdLongMove = false;
     uint32_t pmdFrameStartedMs = 0;
+    PokemonAnimationTiming::Clock pmdAnimationClock;
+    PokemonAnimationTiming::Clock visitorAnimationClock;
     uint32_t feedingBiteMs = 0;
     uint32_t feedingUntilMs = 0;
     bool feedingConsumed = false;

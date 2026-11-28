@@ -28,6 +28,7 @@ public:
     bool saveEncounterHistory(const Game::EncounterHistory& history);
     void reset(Game::GameState& state);
     bool clearAll();
+    bool snapshotHealthy() const;
     bool loadHatchProgress(Game::HatchProgress& progress);
     bool saveHatchProgress(const Game::HatchProgress& progress);
     void clearHatchProgress();

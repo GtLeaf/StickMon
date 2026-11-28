@@ -28,7 +28,7 @@ class AmoledExploreStepTests(unittest.TestCase):
         return subprocess.run([str(self.binary), str(ROOT / 'data'), name],
                               cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE).stdout
 
-    def test_fixed_routes_maps_events_and_rng_match_before_extraction(self):
+    def test_fixed_route_replays_match_current_encounter_tables(self):
         golden = (ROOT / 'tools/fixtures/amoled_explore_routes.txt').read_text()
         self.assertEqual(golden, self.run_case('routes'))
 
@@ -58,6 +58,9 @@ class AmoledExploreStepTests(unittest.TestCase):
 
     def test_legendary_friendship_failure_decline_and_accept_persist(self):
         self.run_case('friendship-lru')
+
+    def test_original_route_idle_walk_timing_pause_and_action_reset(self):
+        self.run_case("animation-timing")
 
     def test_presenter_aliases_models_consumes_damage_and_isolates_instances(self):
         self.run_case('presenter')

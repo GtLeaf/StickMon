@@ -153,7 +153,7 @@ int main() {
     assert(MarketShop::buy(full, slot, 7) == MarketShop::Result::BAG_FULL);
     assert(std::memcmp(&full, &beforeFull, sizeof(full)) == 0);
     assert(MarketShop::buy(state, slot, 3) == MarketShop::Result::STALE);
-    assert(MarketShop::check(state, MarketShop::ROW_COUNT, 7) == MarketShop::Result::BAD_SLOT);
+    assert(MarketShop::check(state, MarketShop::rowCount(state), 7) == MarketShop::Result::BAD_SLOT);
     const auto count = ItemInventory::count(state,id);
     assert(MarketShop::buy(state, slot, 7) == MarketShop::Result::OK);
     assert(state.coins == 100000 - price && ItemInventory::count(state,id) == count+1);

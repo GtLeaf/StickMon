@@ -1,6 +1,8 @@
+#include <memory>
 #include "core/SaveManager.h"
 #include "core/MathUtil.h"
 #include "core/SaveCodec.h"
+#include "game/StorageCapacity.h"
 #include <cmath>
 #include <cstring>
 #include <new>
@@ -150,7 +152,7 @@ struct SaveRecordV8 {
     uint8_t stateBytes[2480];
     MainSceneViewRecord view;
 };
-static_assert(offsetof(Game::GameState, marketSeason) == 2480,
+static_assert(offsetof(Game::LegacyGameState, marketSeason) == 2480,
               "raw v8 state prefix changed");
 static_assert(sizeof(SaveRecordV8) == 2584, "raw v8 envelope changed");
 
@@ -163,7 +165,7 @@ struct SaveRecordV9 {
     uint8_t stateBytes[2524];
     MainSceneViewRecord view;
 };
-static_assert(offsetof(Game::GameState, marketSupply) == 2524,
+static_assert(offsetof(Game::LegacyGameState, marketSupply) == 2524,
               "raw v9 state prefix changed");
 static_assert(sizeof(SaveRecordV9) == 2628, "raw v9 envelope changed");
 
@@ -174,18 +176,22 @@ struct SaveRecordV10 {
     uint8_t stateBytes[2528];
     MainSceneViewRecord view;
 };
-static_assert(offsetof(Game::GameState, friendshipPity) == 2528,
+static_assert(offsetof(Game::LegacyGameState, friendshipPity) == 2528,
               "raw v10 state prefix changed");
 static_assert(sizeof(SaveRecordV10) == 2632, "raw v10 envelope changed");
 
 struct SaveRecordV11 {
-    uint32_t magic;
-    uint16_t version;
-    uint16_t reserved;
-    uint8_t stateBytes[2540];
-    MainSceneViewRecord view;
+    uint32_t magic;uint16_t version;uint16_t reserved;
+    uint8_t stateBytes[2540];MainSceneViewRecord view;
 };
-static_assert(sizeof(SaveRecordV11) == 2644, "raw v11 envelope changed");
+static_assert(sizeof(SaveRecordV11)==2644,"raw v11 envelope changed");
+static_assert(offsetof(Game::LegacyGameState,wallpaperId)==2540,"legacy v11 size changed");
+
+struct SaveRecordV12 {
+    uint32_t magic;uint16_t version;uint16_t reserved;
+    uint8_t stateBytes[2544];MainSceneViewRecord view;
+};
+static_assert(sizeof(SaveRecordV12)==2648,"raw v12 envelope changed");
 
 struct SaveRecordHeader {
     uint32_t magic;
@@ -201,7 +207,7 @@ struct EncounterRecord {
 };
 
 static_assert(sizeof(SaveRecordHeader) == 8, "unexpected save record header size");
-static_assert(offsetof(Game::GameState, normalBossPitySlotIndex) ==
+static_assert(offsetof(Game::LegacyGameState, normalBossPitySlotIndex) ==
                   LEGACY_GAME_STATE_V1_V2_SIZE,
               "v3 fields must be appended after the frozen v1/v2 state");
 static_assert(sizeof(MainSceneViewRecordV1) == 44,
@@ -470,25 +476,33 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
     uint32_t magic = 0;
     uint16_t stateVersion = 0;
     uint16_t storedChecksum = 0;
-    memcpy(&magic, stateBytes + offsetof(Game::GameState, magic), sizeof(magic));
-    memcpy(&stateVersion, stateBytes + offsetof(Game::GameState, version),
+    memcpy(&magic, stateBytes + offsetof(Game::LegacyGameState, magic), sizeof(magic));
+    memcpy(&stateVersion, stateBytes + offsetof(Game::LegacyGameState, version),
            sizeof(stateVersion));
-    memcpy(&storedChecksum, stateBytes + offsetof(Game::GameState, checksum),
+    memcpy(&storedChecksum, stateBytes + offsetof(Game::LegacyGameState, checksum),
            sizeof(storedChecksum));
     uint16_t expectedChecksum = checksumBytes(
         stateBytes, stateSize,
-        offsetof(Game::GameState, checksum));
+        offsetof(Game::LegacyGameState, checksum));
     if (magic != Game::SAVE_MAGIC || stateVersion != version ||
         storedChecksum != expectedChecksum) {
         return false;
     }
 
-    state = Game::GameState{};
-    memcpy(&state, stateBytes, stateSize);
-    if (version <= 10) {
-        state.friendshipPity = FriendshipPity::migrateLegacy(state.legacyFriendshipPity);
-    }
-    Game::MarketWorkshop::migrateLegacyWallpaper(state);
+    new (&state) Game::GameState{};
+    const auto copyPart=[&](size_t source,size_t destination,size_t count){
+        if(source>=stateSize)return;
+        std::memcpy(reinterpret_cast<uint8_t*>(&state)+destination,stateBytes+source,std::min(count,stateSize-source));
+    };
+    using Old=Game::LegacyGameState;using Now=Game::GameState;
+    copyPart(0,0,offsetof(Old,bag));
+    copyPart(offsetof(Old,bag),offsetof(Now,bag),offsetof(Old,careRewards)-offsetof(Old,bag));
+    copyPart(offsetof(Old,careRewards),offsetof(Now,careRewards),sizeof(Old::careRewards));
+    copyPart(offsetof(Old,marketTutor),offsetof(Now,marketTutor),2540-offsetof(Old,marketTutor));
+    if(version>=12)state.wallpaperId=stateBytes[2540];
+    state.storageCount=std::min<uint8_t>(state.storageCount,20);
+    if(version<=10)state.friendshipPity = FriendshipPity::migrateLegacy(state.legacyFriendshipPity);
+    if(version<12)Game::MarketWorkshop::migrateLegacyWallpaper(state);
     std::memset(state.legacyFriendshipPity, 0, sizeof(state.legacyFriendshipPity));
     state.settings.reservedAudioSetting = 0;
     // Legacy v1/v2 records did not define gender. Use the requested stable
@@ -543,6 +557,9 @@ bool migrateLegacySaveRecord(const uint8_t* raw, size_t len,
 struct CodecLoadResult {
     bool found = false;
     bool newerVersion = false;
+    bool archiveEnabled = false, unavailable = false;
+    int newestArchive = -1;
+    uint32_t newestArchiveSequence = 0;
     SaveCodec::Snapshot snapshot;
     uint32_t sequence = 0;
     uint16_t schema = 0;
@@ -560,16 +577,27 @@ void loadLatestCodecSnapshot(CodecLoadResult& result) {
     // instances (~1.7KB each) plus the printf error path were enough to
     // overflow it on devices without state_a/state_b slots.
     auto* scratch = new (std::nothrow) SaveCodec::Snapshot;
-    if (!scratch) return;
-    for (const char* key : KEYS) {
-        size_t length = Platform::blobs().blobSize(NVS_NS, key);
+    if (!scratch) {result.unavailable=true;return;}
+    size_t markerLength=0;uint32_t marker=0;
+    const auto lookup=Platform::blobs().lookupBlob(NVS_NS,"save_archive",markerLength);
+    if(lookup==Platform::BlobLookup::FAILED&&Platform::blobs().hasAuthoritativeLookup()){result.unavailable=true;delete scratch;return;}
+    result.archiveEnabled=lookup==Platform::BlobLookup::FOUND;
+    auto* files=Platform::services().userFiles;
+    if(result.archiveEnabled&&(markerLength!=sizeof(marker)||!Platform::blobs().readBlob(NVS_NS,"save_archive",&marker,sizeof(marker))||marker!=0x31415253||!files||!files->begin())){
+        result.unavailable=true;delete scratch;return;
+    }
+    bool archiveValid=false;
+    constexpr const char* FILES[]={"save-a.bin","save-b.bin"};
+    for (unsigned index=0;index<(result.archiveEnabled?5U:3U);++index) {
+        const bool archived=index>=3;const char* key=archived?FILES[index-3]:KEYS[index];
+        size_t length = archived?files->size(key):Platform::blobs().blobSize(NVS_NS, key);
         if (length < SaveCodec::HEADER_BYTES ||
-            length > SaveCodec::MAX_ENCODED_BYTES) {
+            length > SaveCodec::MAX_ENVELOPE_BYTES) {
             continue;
         }
         auto* raw = new (std::nothrow) uint8_t[length];
-        if (!raw) continue;
-        bool readOk = Platform::blobs().readBlob(NVS_NS, key, raw, length);
+        if (!raw) {result.unavailable=true;delete scratch;return;}
+        bool readOk = archived?files->read(key,0,raw,length):Platform::blobs().readBlob(NVS_NS, key, raw, length);
         if (!readOk) {
             delete[] raw;
             continue;
@@ -583,13 +611,16 @@ void loadLatestCodecSnapshot(CodecLoadResult& result) {
         uint16_t schema = static_cast<uint16_t>(raw[4]) |
                           static_cast<uint16_t>(raw[5]) << 8;
         if (schema > SaveCodec::SCHEMA_VERSION) {
-            result.newerVersion = true;
+            if(SaveCodec::validEnvelope(raw,length))result.newerVersion = true;
             delete[] raw;
             continue;
         }
         uint32_t sequence = 0;
-        if (SaveCodec::decode(raw, length, *scratch, &sequence) &&
-            (!result.found || sequenceIsNewer(sequence, result.sequence))) {
+        const bool valid=SaveCodec::decode(raw,length,*scratch,&sequence);
+        if(valid&&archived){archiveValid=true;
+            if(result.newestArchive<0||sequenceIsNewer(sequence,result.newestArchiveSequence)){result.newestArchive=int(index)-3;result.newestArchiveSequence=sequence;}
+        }
+        if (valid && (!result.found || sequenceIsNewer(sequence, result.sequence))) {
             result.found = true;
             result.sequence = sequence;
             result.schema = schema;
@@ -597,11 +628,12 @@ void loadLatestCodecSnapshot(CodecLoadResult& result) {
         }
         delete[] raw;
     }
+    if(result.archiveEnabled&&!archiveValid)result.unavailable=true;
     delete scratch;
 }
 
 void resetGameState(Game::GameState& state) {
-    state = Game::GameState{};
+    new (&state) Game::GameState{};
 }
 
 bool sanitizeMonster(Game::MonsterRuntime& mon) {
@@ -1048,6 +1080,8 @@ bool SaveManager::load(Game::GameState& state,
         return false;
     }
     loadLatestCodecSnapshot(*codecHeap);
+    if(codecHeap->newerVersion){delete codecHeap;reset(state);if(status)*status=LoadStatus::NEWER_VERSION;return false;}
+    if(codecHeap->unavailable){delete codecHeap;reset(state);if(status)*status=LoadStatus::INVALID;return false;}
     if (codecHeap->found) {
         state = codecHeap->snapshot.state;
         viewState = codecHeap->snapshot.view;
@@ -1177,12 +1211,12 @@ bool SaveManager::load(Game::GameState& state,
         }
     } else if (header.version == 11 && len == sizeof(SaveRecordV11)) {
         const auto* record = reinterpret_cast<const SaveRecordV11*>(raw);
-        loaded = loadLegacyGameState(record->stateBytes, 11, state, sizeof(record->stateBytes));
-        if (loaded) {
-            viewValid = mainSceneViewRecordValid(record->view);
-            if (viewValid) loadMainSceneViewRecord(record->view, viewState);
-            migrated = true;
-        }
+        loaded=loadLegacyGameState(record->stateBytes,11,state,2540);
+        if(loaded){viewValid=mainSceneViewRecordValid(record->view);if(viewValid)loadMainSceneViewRecord(record->view,viewState);migrated=true;}
+    } else if (header.version == 12 && len == sizeof(SaveRecordV12)) {
+        const auto* record=reinterpret_cast<const SaveRecordV12*>(raw);
+        loaded=loadLegacyGameState(record->stateBytes,12,state,2544);
+        if(loaded){viewValid=mainSceneViewRecordValid(record->view);if(viewValid)loadMainSceneViewRecord(record->view,viewState);migrated=true;}
     } else if (header.version == SAVE_RECORD_VERSION &&
                len == sizeof(SaveRecord)) {
         auto* record = new (std::nothrow) SaveRecord{};
@@ -1265,6 +1299,7 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
         return false;
     }
     loadLatestCodecSnapshot(*previous);
+    if(previous->unavailable||previous->newerVersion){delete[] encoded;delete previous;delete copy;return false;}
     uint32_t sequence = previous->found ? previous->sequence + 1U : 1U;
     *copy = state;
     for (uint8_t slot = 0; slot < copy->teamCount;) {
@@ -1278,7 +1313,7 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
         --copy->teamCount;
         copy->team[copy->teamCount] = Game::MonsterRuntime{};
     }
-    if (copy->activeSlot >= copy->teamCount) copy->activeSlot = 0;
+    copy->activeSlot = 0;
     copy->magic = Game::SAVE_MAGIC;
     copy->version = Game::SAVE_VERSION;
     copy->checksum = checksum(*copy);
@@ -1290,6 +1325,25 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
         delete copy;
         Platform::errorLine("[SaveManager] snapshot encode failed");
         return false;
+    }
+
+    if(state.storageUpgrades||previous->archiveEnabled){
+        auto* files=Platform::services().userFiles;
+        bool ready=files&&files->begin();
+        constexpr const char* names[]={"save-a.bin","save-b.bin"};
+        // Orphans from an interrupted first activation are invisible without
+        // the marker. Remove them before starting a new archive generation.
+        if(ready&&!previous->archiveEnabled)for(const auto* name:names)
+            if(files->exists(name)&&!files->remove(name))ready=false;
+        const int primaryIndex=previous->newestArchive==0?1:0;
+        const char* primary=names[primaryIndex];const char* mirror=names[1-primaryIndex];
+        const auto publish=[&](const char* name){return (!files->exists(name)||files->remove(name))&&files->writeNew(name,encoded,encodedLength);};
+        bool durable=ready&&publish(primary);
+        // First activation commits only when NVS points to a complete file.
+        // Marker failure leaves an ignored orphan, never a committed purchase.
+        if(durable&&!previous->archiveEnabled){const uint32_t marker=0x31415253;durable=Platform::blobs().writeBlob(NVS_NS,"save_archive",&marker,sizeof(marker));}
+        if(durable)publish(mirror);
+        delete[] encoded;delete previous;delete copy;return durable;
     }
 
     const char* slotKey = (sequence & 1U) != 0 ? NVS_KEY_A : NVS_KEY_B;
@@ -1370,8 +1424,22 @@ void SaveManager::reset(Game::GameState& state) {
     resetGameState(state);
 }
 
+bool SaveManager::snapshotHealthy() const {
+    std::unique_ptr<CodecLoadResult> loaded(new (std::nothrow) CodecLoadResult);
+    if(!loaded)return false;
+    loadLatestCodecSnapshot(*loaded);
+    if(loaded->unavailable||loaded->newerVersion)return false;
+    return loaded->found||(!Platform::blobs().blobSize(NVS_NS,NVS_KEY)&&!Platform::blobs().blobSize(NVS_NS,NVS_KEY_A)&&!Platform::blobs().blobSize(NVS_NS,NVS_KEY_B)&&!loaded->archiveEnabled);
+}
+
 bool SaveManager::clearAll() {
-    return Platform::blobs().clearNamespace(NVS_NS);
+    // Clearing the marker is the logical reset. Failed namespace deletion
+    // leaves both files intact; orphan cleanup after success is best effort.
+    if(!Platform::blobs().clearNamespace(NVS_NS))return false;
+    auto* files=Platform::services().userFiles;
+    if(files&&files->begin())for(const auto* name:{"save-a.bin","save-b.bin"})
+        if(files->exists(name))files->remove(name);
+    return true;
 }
 
 bool SaveManager::loadHatchProgress(Game::HatchProgress& progress) {

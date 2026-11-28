@@ -5,6 +5,7 @@
 
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
+#include "game/PokemonAnimationTiming.h"
 
 namespace ExploreEcology {
 
@@ -65,6 +66,7 @@ inline constexpr uint8_t ACTIVITY_COUNT = uint8_t(Activity::ARRIVE) + 1;
 
 Temperament temperamentForSpecies(uint16_t speciesId);
 Locomotion locomotionForSpecies(uint16_t speciesId);
+bool waterOnlySpecies(uint16_t speciesId);
 bool wideFlightSpecies(uint16_t speciesId);
 bool isEpisode(Activity activity);
 
@@ -72,7 +74,8 @@ struct Pose {
     uint16_t speciesId = 0;
     float x = 0, y = 0;
     uint8_t direction = 0;  // Down, left, up, right.
-    uint8_t frame = 0;
+    uint8_t frame = 0;  // Behavior/effect phase, also legacy artwork.
+    uint8_t animationFrame = 0;  // Original source artwork timing when available.
     bool walking = false;
     bool hidden = false;
     Surface surface = Surface::GRASS;
@@ -82,11 +85,24 @@ struct Pose {
     Cover cover = Cover::NONE;
     bool airborne = false;
     bool absent = false;
+    uint8_t artworkFrame() const {
+        return PokemonAnimationTiming::hasTiming(speciesId) ? animationFrame : frame;
+    }
 };
+
+inline PokemonAnimationTiming::Action animationAction(const Pose& pose) {
+    if (pose.activity == Activity::DOZE ||
+        (pose.cover == Cover::GRASS &&
+         (pose.activity == Activity::HIDE || pose.activity == Activity::BURROW)))
+        return PokemonAnimationTiming::Action::Sleep;
+    return pose.walking || pose.airborne || pose.activity == Activity::TAKEOFF ||
+            pose.activity == Activity::LAND
+        ? PokemonAnimationTiming::Action::Walk : PokemonAnimationTiming::Action::Idle;
+}
 
 inline bool samePose(const Pose& a, const Pose& b) {
     return a.speciesId == b.speciesId && a.x == b.x && a.y == b.y &&
-        a.direction == b.direction && a.frame == b.frame &&
+        a.direction == b.direction && a.frame == b.frame && a.animationFrame == b.animationFrame &&
         a.walking == b.walking && a.hidden == b.hidden && a.surface == b.surface &&
         a.activity == b.activity && a.lift == b.lift && a.sway == b.sway &&
         a.cover == b.cover && a.airborne == b.airborne && a.absent == b.absent;
@@ -149,6 +165,7 @@ private:
     void appendActor(uint16_t species, uint8_t cell, bool hidden, uint32_t& random);
     struct Actor {
         Pose pose;
+        PokemonAnimationTiming::Clock animationClock;
         float homeX = 0, homeY = 0;
         float fromX = 0, fromY = 0, toX = 0, toY = 0;
         uint32_t random = 1, pendingMs = 0;
@@ -185,6 +202,7 @@ private:
     void rest(uint8_t index, bool endEpisode);
     void returnToOrigin(uint8_t index);
     void advance(uint8_t index, uint32_t dt, float playerX, float playerY, bool visible);
+    void updateAnimation(uint8_t index, uint32_t nowMs, bool active, bool applyFrame);
     Actor actors_[CAPACITY]{};
     Surface surfaces_[ExploreMapGenerator::CELL_COUNT]{};
     Cover cover_[ExploreMapGenerator::CELL_COUNT]{};

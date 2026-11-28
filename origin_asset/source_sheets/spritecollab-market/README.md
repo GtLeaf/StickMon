@@ -6,5 +6,5 @@
 - 原作精灵美术：Pokémon / Nintendo / Creatures / GAME FREAK / Chunsoft。按源仓库的原作素材说明保留归属；不是新绘制的原创角色。
 - `source.json` 记录上游版本及下载文件 SHA256；XML、Anim 和 Shadow PNG 均保留原字节。
 - `tools/import_market_npc_frames.py` 离线按原阴影中心定位，最近邻 2 倍输出，保留透明度，不生成或重绘像素。
-- `origin_asset/market_npc_species.json` 是角色列表；这四种当前只作 NPC，不改变可收服名单。
+- `origin_asset/market_npc_species.json` 是市集角色列表。信使鸟也可在霜晶窟结交，市集访客沿用这里的动作帧。
 - 运行时图包由原 `generate_pokemon_sprites.py` 生成。预览图、接入日志和验收截图放 `.stick-local/`。

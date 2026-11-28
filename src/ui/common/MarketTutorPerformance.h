@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "assets/PokemonSprites.h"
 #include "game/Species.h"
+#include "game/PokemonAnimationTiming.h"
 #include "presentation/PixelRenderer.h"
 
 // Presentation only. Transactions and the performance clock belong to the
@@ -105,6 +106,14 @@ namespace Ui::MarketTutorPerformance {
             }
             c().fillCircle(x, y, lerp(2, 7, q), color);
         }
+        // Only cycling windows use the original Walk clock. Static directional
+        // poses (including melee impacts and pauses) remain script-selected
+        // holds, rather than starting a separate Idle animation between casts.
+        inline int walkPose(uint16_t id, double t, double start, int legacyPose) {
+            if (!PokemonAnimationTiming::hasTiming(id)) return legacyPose;
+            const auto elapsed = uint64_t(std::llround(std::max(0.0, t-start)*1000.0));
+            return PokemonAnimationTiming::frameAt(id, PokemonAnimationTiming::Action::Walk, elapsed);
+        }
         inline void actor(int x, int ground, int lift, uint16_t id, bool right, int pose) {
             c().fillEllipse(x, ground, 22, 5, shadow);
             PokemonSprites::WalkingAnimation a{};
@@ -127,16 +136,16 @@ namespace Ui::MarketTutorPerformance {
             int gh = 0, ph = 0, gpose = 0, ppose = 0;
             if (t>.7&&t<1.5) {
                 ph = hop(t, .7, 1.5, 5);
-                ppose = int(t*10)%3;
+                ppose = walkPose(partner, t, .7, int(t*10)%3);
             }
             if (t>2.65&&t<3.45) {
                 ph = hop(t, 2.65, 3.45, 7);
-                ppose = int(t*10)%3;
+                ppose = walkPose(partner, t, 2.65, int(t*10)%3);
             }
             if (t>4.1) {
                 gh = hop(t, 4.1, 4.5, 7);
                 ph = hop(t, 4.2, 4.6, 12);
-                gpose = int(t*8)%3;
+                gpose = walkPose(94, t, 4.1, int(t*8)%3);
             }
             actor(90, 366, gh, 94, true, gpose);
             actor(278, 366, ph, partner, false, ppose);
@@ -164,17 +173,17 @@ namespace Ui::MarketTutorPerformance {
             if (t < .6) px = lerp(278, 286, p(t, 0, .6));
             else if (t < 1.15) {
                 px = lerp(286, 205, p(t, .6, 1.15));
-                pose = int((t - .6) * 14) % 3;
+                pose = walkPose(partner, t, .6, int((t - .6) * 14) % 3);
             } else if (t < 1.35) {
                 px = 205; py = hop(t, 1.15, 1.35, 4); pose = 1;
             } else if (t < 1.9) {
-                px = lerp(205, 278, p(t, 1.35, 1.9)); pose = int(t * 12) % 3;
+                px = lerp(205, 278, p(t, 1.35, 1.9)); pose = walkPose(partner, t, 1.35, int(t * 12) % 3);
             } else if (t >= 2.6 && t < 3.15) {
-                px = lerp(278, 200, p(t, 2.6, 3.15)); pose = int(t * 14) % 3;
+                px = lerp(278, 200, p(t, 2.6, 3.15)); pose = walkPose(partner, t, 2.6, int(t * 14) % 3);
             } else if (t >= 3.15 && t < 3.4) {
                 px = 200; py = hop(t, 3.15, 3.4, 7); pose = 1;
             } else if (t >= 3.4 && t < 3.95) {
-                px = lerp(200, 278, p(t, 3.4, 3.95)); pose = int(t * 12) % 3;
+                px = lerp(200, 278, p(t, 3.4, 3.95)); pose = walkPose(partner, t, 3.4, int(t * 12) % 3);
             }
             if (t >= 4.2) py = hop(t, 4.2, 4.6, 10);
             int tx = 180;
@@ -216,10 +225,10 @@ namespace Ui::MarketTutorPerformance {
             constexpr int cx = 278, cy = 329;
             int lift = 0, pose = 0;
             if (t >= .6 && t < 1.4) {
-                lift = int(3 * std::sin(PI * p(t, .6, 1.4))); pose = int(t * 6) % 3;
+                lift = int(3 * std::sin(PI * p(t, .6, 1.4))); pose = walkPose(partner, t, .6, int(t * 6) % 3);
             }
             if (t >= 2.6 && t < 3.3) {
-                lift = int(3 * std::sin(PI * p(t, 2.6, 3.3))); pose = int(t * 6) % 3;
+                lift = int(3 * std::sin(PI * p(t, 2.6, 3.3))); pose = walkPose(partner, t, 2.6, int(t * 6) % 3);
             }
             if (t >= 4.25) lift = hop(t, 4.25, 4.65, 8);
             // First cast: loose points gather into a wavering ring.
@@ -262,11 +271,11 @@ namespace Ui::MarketTutorPerformance {
             inline void pulseTarget(double t,double a,double b){if(t<a||t>=b)return;ring(178,330,lerp(19,27,p(t,a,b)),purple);}
             inline void remote(double t, uint16_t partner){
              int gh=0,ph=0,gpose=0,ppose=0,gx=90;
-             if(t>=.4&&t<1.4){gh=hop(t,.4,1.4,7);gpose=int(t*10)%3;}
-             if(t>=1.4&&t<2.3){ph=hop(t,1.4,2.3,4);ppose=int(t*10)%3;}
+             if(t>=.4&&t<1.4){gh=hop(t,.4,1.4,7);gpose=walkPose(94,t,.4,int(t*10)%3);}
+             if(t>=1.4&&t<2.3){ph=hop(t,1.4,2.3,4);ppose=walkPose(partner,t,1.4,int(t*10)%3);}
              if(t>=2.3&&t<2.5)gx+=int(std::sin(t*30)*3);
-             if(t>=2.5&&t<3.5){gh=hop(t,2.5,3.5,8);gpose=int(t*10)%3;}
-             if(t>=3.5&&t<4.6){ph=hop(t,3.5,4.6,8);ppose=int(t*10)%3;}
+             if(t>=2.5&&t<3.5){gh=hop(t,2.5,3.5,8);gpose=walkPose(94,t,2.5,int(t*10)%3);}
+             if(t>=3.5&&t<4.6){ph=hop(t,3.5,4.6,8);ppose=walkPose(partner,t,3.5,int(t*10)%3);}
              if(t>=4.8){gh=hop(t,4.8,5.25,9);ph=hop(t,4.8,5.25,10);}
              actor(gx,366,gh,94,true,gpose);actor(278,366,ph,partner,false,ppose);
              if(t<4.45){int r=lerp(2,19,p(t,0,.4));ring(178,330,r,purple,2);ring(178,330,std::max(1,r/2),purple);c().fillCircle(178,330,3,purple);}
@@ -289,19 +298,19 @@ namespace Ui::MarketTutorPerformance {
             inline void melee(double t, uint16_t partner){
              int gx=90,px=278,gh=0,ph=0,gpose=0,ppose=0,tx=180;
              // Teacher strikes and fully returns before the learner moves.
-             if(t>=.4&&t<.75){gx=lerp(90,150,p(t,.4,.75));gpose=int(t*14)%3;}
+             if(t>=.4&&t<.75){gx=lerp(90,150,p(t,.4,.75));gpose=walkPose(94,t,.4,int(t*14)%3);}
              else if(t>=.75&&t<.9){gx=150;gh=hop(t,.75,.9,4);gpose=1;}
-             else if(t>=.9&&t<1.25){gx=lerp(150,90,p(t,.9,1.25));gpose=int(t*12)%3;}
+             else if(t>=.9&&t<1.25){gx=lerp(150,90,p(t,.9,1.25));gpose=walkPose(94,t,.9,int(t*12)%3);}
              // Learner stops at the edge of the target on the first try.
-             if(t>=1.4&&t<1.8){px=lerp(278,221,p(t,1.4,1.8));ppose=int(t*12)%3;}
+             if(t>=1.4&&t<1.8){px=lerp(278,221,p(t,1.4,1.8));ppose=walkPose(partner,t,1.4,int(t*12)%3);}
              else if(t>=1.8&&t<2.0){px=221;ph=hop(t,1.8,2.0,2);}
-             else if(t>=2.0&&t<2.4){px=lerp(221,278,p(t,2.0,2.4));ppose=int(t*10)%3;}
-             if(t>=2.5&&t<2.85){gx=lerp(90,154,p(t,2.5,2.85));gpose=int(t*14)%3;}
+             else if(t>=2.0&&t<2.4){px=lerp(221,278,p(t,2.0,2.4));ppose=walkPose(partner,t,2.0,int(t*10)%3);}
+             if(t>=2.5&&t<2.85){gx=lerp(90,154,p(t,2.5,2.85));gpose=walkPose(94,t,2.5,int(t*14)%3);}
              else if(t>=2.85&&t<3.0){gx=154;gh=hop(t,2.85,3.0,5);gpose=1;}
-             else if(t>=3.0&&t<3.35){gx=lerp(154,90,p(t,3.0,3.35));gpose=int(t*12)%3;}
-             if(t>=3.5&&t<3.95){px=lerp(278,200,p(t,3.5,3.95));ppose=int(t*14)%3;}
+             else if(t>=3.0&&t<3.35){gx=lerp(154,90,p(t,3.0,3.35));gpose=walkPose(94,t,3.0,int(t*12)%3);}
+             if(t>=3.5&&t<3.95){px=lerp(278,200,p(t,3.5,3.95));ppose=walkPose(partner,t,3.5,int(t*14)%3);}
              else if(t>=3.95&&t<4.15){px=200;ph=hop(t,3.95,4.15,6);ppose=1;}
-             else if(t>=4.15&&t<4.55){px=lerp(200,278,p(t,4.15,4.55));ppose=int(t*12)%3;}
+             else if(t>=4.15&&t<4.55){px=lerp(200,278,p(t,4.15,4.55));ppose=walkPose(partner,t,4.15,int(t*12)%3);}
              if(t>=.8&&t<1.15)tx+=int(5*std::sin(PI*p(t,.8,1.15)));
              if(t>=1.85&&t<2.1)tx-=int(2*std::sin(PI*p(t,1.85,2.1)));
              if(t>=2.9&&t<3.25)tx+=int(6*std::sin(PI*p(t,2.9,3.25)));
@@ -327,10 +336,10 @@ namespace Ui::MarketTutorPerformance {
             }
             inline void self(double t, uint16_t partner){
              int gh=0,ph=0,gpose=0,ppose=0;
-             if(t>=.4&&t<1.4){gh=hop(t,.4,1.4,4);gpose=int(t*6)%3;}
-             if(t>=1.4&&t<2.5){ph=int(2*std::sin(PI*p(t,1.4,2.5)));ppose=int(t*6)%3;}
-             if(t>=2.5&&t<3.5){gh=hop(t,2.5,3.5,4);gpose=int(t*6)%3;}
-             if(t>=3.5&&t<4.6){ph=hop(t,3.5,4.6,3);ppose=int(t*6)%3;}
+             if(t>=.4&&t<1.4){gh=hop(t,.4,1.4,4);gpose=walkPose(94,t,.4,int(t*6)%3);}
+             if(t>=1.4&&t<2.5){ph=int(2*std::sin(PI*p(t,1.4,2.5)));ppose=walkPose(partner,t,1.4,int(t*6)%3);}
+             if(t>=2.5&&t<3.5){gh=hop(t,2.5,3.5,4);gpose=walkPose(94,t,2.5,int(t*6)%3);}
+             if(t>=3.5&&t<4.6){ph=hop(t,3.5,4.6,3);ppose=walkPose(partner,t,3.5,int(t*6)%3);}
              halo(90,t,.4,1.4,purple,true);
              halo(278,t,1.4,2.5,energy,false);
              halo(90,t,2.5,3.5,purple,true);

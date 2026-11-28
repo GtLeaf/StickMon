@@ -153,16 +153,18 @@ bool ContactsUiBase::handleButton(const ButtonEvent& event) {
 }
 
 bool ContactsUiBase::handleTap(int target) {
-    if (target < 0) return false;
-    if (target >= 200) {
-        const bool yes = target == 200;
-        if (storageReleaseConfirmOpen) storageReleaseConfirmYes = yes;
-        else if (storageInviteConfirmOpen) storageInviteConfirmYes = yes;
-        else return false;
-    } else if (target >= 128) {
-        if (!storageActionOpen) return false;
-        storageActionCursor = target - 128;
-    } else storageCursor = target;
+    if(storageReleaseConfirmOpen||storageInviteConfirmOpen){
+        if(target!=200&&target!=201)return false;
+        const bool yes=target==200;
+        if(storageReleaseConfirmOpen)storageReleaseConfirmYes=yes;
+        else storageInviteConfirmYes=yes;
+    }else if(storageActionOpen){
+        if(target<128||target>=128+actionCount())return false;
+        storageActionCursor=target-128;
+    }else{
+        if(target<0||target>=listItemCount())return false;
+        storageCursor=uint8_t(target);
+    }
     host.pageNavigationTutorial();
     return handleButton({0, BtnAction::PRESSED});
 }

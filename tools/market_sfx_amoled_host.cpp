@@ -139,9 +139,9 @@ struct AmoledAppTestAccess {
         TouchEvent drag{};drag.x=184;drag.y=400;drag.timestampMs=stamp;drag.type=TouchEventType::DOWN;
         app.handleMarketShopTouch(drag);drag.type=TouchEventType::MOVE;drag.y=48;app.handleMarketShopTouch(drag);
         drag.type=TouchEventType::UP;drag.timestampMs+=100;app.handleMarketShopTouch(drag);stamp+=200;quiet(n);
-        assert(app.marketShopUi_.scrollOffset()==352);
+        assert(app.marketShopUi_.scrollOffset()==424);
         phase="box-stars";
-        tap(shop,184,404);n=audio.sounds.size();tap(shop,272,414);quiet(n);
+        tap(shop,184,332);n=audio.sounds.size();tap(shop,272,414);quiet(n);
         assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_ARRIVE);
         advance(7);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_WAIT);quiet(n);
         advance(20);tap(shop,184,100);quiet(n);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_WAIT);

@@ -2,6 +2,7 @@ import json
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 import zlib
 from pathlib import Path
 
@@ -11,14 +12,23 @@ import generate_sprite_previews as sprites
 class SpritePackTests(unittest.TestCase):
     def fixture(self, version=2, checksum=None, frame_offset=0):
         # Two opaque red pixels; the ground marker carries one pixel of padding.
-        raw = sprites.PACK_FRAME.pack(0, 2, 1, 0, 0, 0xA501, frame_offset, 3, 0)
-        raw += struct.pack("<3H", 2, 0xF800, 0xF800)
+        frame = (0, 2, 1, 0, 0, 0xA501, frame_offset, 3, 0)
+        raw = (sprites.PACK_FRAME_V3.pack(*frame, 1, 1, 1, 1) if version >= 3
+               else sprites.PACK_FRAME.pack(*frame))
+        words = [2, 0xF800, 0xF800]
+        if version == 4:
+            # V4 requires a nonzero upper word-count extension.
+            words.extend([0x8001] * 65536)
+        raw += struct.pack(f'<{len(words)}H', *words)
         if version == 1:
             return sprites.PACK_HEADER.pack(sprites.PACK_MAGIC, 1, 1, 1, 3, 0, 0) + raw
         encoder = zlib.compressobj(wbits=-15)
         compressed = encoder.compress(raw) + encoder.flush()
         crc = zlib.crc32(raw) if checksum is None else checksum
-        return sprites.PACK_HEADER_V2.pack(sprites.PACK_MAGIC, 2, 1, 1, 3, 0, 1, len(raw), len(compressed), crc) + compressed
+        header = sprites.PACK_HEADER_V2.pack(sprites.PACK_MAGIC, version, 1, 1,
+                                             len(words) & 0xFFFF, 0, 1,
+                                             len(raw), len(compressed), crc)
+        return header + (struct.pack('<H', len(words) >> 16) if version == 4 else b'') + compressed
 
     def load(self, payload):
         with tempfile.TemporaryDirectory() as directory:
@@ -26,8 +36,8 @@ class SpritePackTests(unittest.TestCase):
             path.write_bytes(payload)
             return sprites.load_sprite_pack(path, ["FRONT"])
 
-    def test_v1_and_v2_decode_identical_pixels_and_ground(self):
-        for version in (1, 2):
+    def test_v1_through_v4_decode_identical_pixels_and_ground(self):
+        for version in (1, 2, 3, 4):
             with self.subTest(version=version):
                 species, frames, words, palettes = self.load(self.fixture(version))
                 self.assertEqual(species, 1)
@@ -58,6 +68,14 @@ class SpritePackTests(unittest.TestCase):
                     self.assertEqual(image.size, (frame["width"], frame["height"]))
 
     def test_generated_catalog_matches_current_pack_dimensions_and_ground(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with patch.object(sprites, 'OUT_DIR', output / 'sprites'), \
+                    patch.object(sprites, 'MANIFEST', output / 'manifest.js'):
+                sprites.main()
+                self.assert_generated_catalog_matches_current_pack()
+
+    def assert_generated_catalog_matches_current_pack(self):
         names = sprites.parse_kind_names(sprites.ASSET_H.read_text())
         manifest = sprites.MANIFEST.read_text().removeprefix("window.STICKMON_PROJECT_SPRITES = ").strip().removesuffix(";")
         entries = {entry["speciesId"]: entry for entry in json.loads(manifest)}

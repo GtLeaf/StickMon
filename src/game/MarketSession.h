@@ -4,6 +4,7 @@
 #include <algorithm>
 #include "game/MarketData.h"
 #include "game/MarketDirection.h"
+#include "game/PokemonAnimationTiming.h"
 
 // Portable 100ms town simulation. All actors reserve the same half-cell mesh;
 // no exploration counters, rewards, clocks or save structures are referenced.
@@ -16,8 +17,10 @@ struct Actor {
     uint8_t direction=0, progress=0, stepTicks=3, crossing=0;
     // Crossing: 1 entering, 2 inside, 3 leaving, 4 hidden.
     uint8_t stage=4, patrol=0, halfStep=0;
+    PokemonAnimationTiming::Clock animationClock;
+    uint8_t animationFrame=0;
 };
-struct Pose { float x=0,y=0,lift=0; bool speaking=false; uint16_t species=0; uint8_t direction=0; bool visible=false,moving=false; };
+struct Pose { float x=0,y=0,lift=0; bool speaking=false; uint16_t species=0; uint8_t direction=0; bool visible=false,moving=false,npc=false; uint8_t animationFrame=0; };
 
 class Session {
     const Data* data_=nullptr;
@@ -49,6 +52,22 @@ class Session {
         bool active=false,ready=false;
     } conversation_;
     VisitPhase phase_=VisitPhase::WAITING;
+    bool updateAnimations(uint32_t now, bool active) {
+        bool changed=false;
+        for(int i=0;i<count();++i) {
+            auto& actor=actors_[i];
+            // Existing Delibird NPC art is a separate legacy animation.
+            if(!PokemonAnimationTiming::hasTiming(actor.species)||
+               (actor.species==225&&i!=player()&&i!=partner()))continue;
+            const auto p=pose(i);
+            const auto action=p.moving?PokemonAnimationTiming::Action::Walk:PokemonAnimationTiming::Action::Idle;
+            const uint8_t frame=actor.animationClock.update(actor.species,action,now,
+                active&&p.visible&&(!conversing()||p.moving));
+            changed|=frame!=actor.animationFrame;
+            actor.animationFrame=frame;
+        }
+        return changed;
+    }
     uint32_t next() { random_^=random_<<13; random_^=random_>>17; random_^=random_<<5; return random_; }
     uint16_t between(uint16_t a,uint16_t b) { return uint16_t(a+next()%(b-a+1)); }
     int player() const { return data_->residentCount; }
@@ -618,7 +637,8 @@ public:
         // Move clear of the entrance before allowing an intentional departure.
         actors_[player()].goal=d.stopCount?d.stops[0]:NONE;
         timer_=between(d.intervalMin,d.intervalMax);
-        spawnTimer_=d.firstMin?between(d.firstMin,d.firstMax):timer_;return true;
+        spawnTimer_=d.firstMin?between(d.firstMin,d.firstMax):timer_;
+        updateAnimations(now,true);return true;
     }
     int count() const { return data_?data_->residentCount+2+2*data_->maxGroups:0; }
     const Data& data() const { return *data_; }
@@ -693,7 +713,7 @@ public:
     }
     void conversationSpeaker(int actor) {conversation_.speaker=int8_t(actor);}
     void endConversation() {conversation_={};inputDirection_=-1;manualNavigationPending_=false;}
-    void pause(bool value) { paused_=value;if(value)inputDirection_=-1; }
+    void pause(bool value) { paused_=value;if(value){inputDirection_=-1;updateAnimations(lastMs_,false);} }
     void stopPlayer() { actors_[player()].goal=NONE; }
     void nextTarget() { if(data_->stopCount)target_=(target_+1)%data_->stopCount; }
     uint16_t selectedTarget() const { return data_->stopCount?data_->stops[target_]:data_->entry; }
@@ -719,9 +739,9 @@ public:
     bool update(uint32_t now,bool active=true) {
         if(!initialized_)return false;
         const uint32_t delta=now-lastMs_;lastMs_=now;
-        if(!active||paused_||finished_) {if(!active)inputDirection_=-1;return false;}
+        if(!active||paused_||finished_) {if(!active)inputDirection_=-1;updateAnimations(now,false);return false;}
         uint32_t remaining=delta>250?0:delta;
-        if(conversing()){advanceConversation(remaining);return !conversation_.ready;}
+        if(conversing()){advanceConversation(remaining);const bool changed=updateAnimations(now,true);return changed||!conversation_.ready;}
         if(manual_&&manualNavigationPending_){manualNavigationPending_=false;party();}
         while(remaining&&!finished_) {
             // Stop at arrivals as well as simulation ticks. The manual pair
@@ -743,10 +763,13 @@ public:
             if(remainder_==100){remainder_=0;tick();}
             else if(arrived)party();
         }
+        updateAnimations(now,true);
         return true;
     }
     Pose pose(int i) const {
         Pose p;const auto& a=actors_[i];p.visible=a.stage!=4;p.species=a.species;p.direction=a.direction;
+        p.animationFrame=a.animationFrame;
+        p.npc=i!=player()&&i!=partner();
         if(!p.visible)return p;
         const float fraction=remainder_/100.0f;
         float t=a.from==a.to?1.0f:manualActor(i)?float(a.motionMs)/walkDurationMs(a.direction):(a.progress+fraction)/a.stepTicks;

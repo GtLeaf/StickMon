@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 from generate_sdgoods_catalog import ROOT, generate, exporter_source
+from pmd_expansion_sheets import MANIFEST
 
 OUT=ROOT/'.stick-local/artifacts/sdgoods-resource-storage-20261105/content-tests'
 
@@ -39,8 +40,43 @@ template<class V> void contentFields(V& v,TestRecord& x) {v(x.number,x.text,x.en
     Game::MonsterRuntime individual{};
     individual.level=7;
     individual.ivPacked=1;
-    if(!wurmple || !wurmple->assetsPending ||
+    if(!wurmple || wurmple->assetsPending ||
        levelUpEvolutionTarget(*wurmple,individual,0)!=findSpecies(268)) return 13;
+    if(argc==4 && std::string(argv[3])=="reject-large-sprite") {
+        return PokemonSprites::findSpeciesSprite(381, PokemonSprites::SpriteKind::FRONT) ? 21 : 0;
+    }
+    if(argc==4 && std::string(argv[3])=="expansion-sprites") {
+        using namespace PokemonSprites;
+        for(const auto& expected:EXPANSION_ROOM_PROFILES) {
+            const auto id=expected.speciesId;
+            PetAnimationProfile pet{};
+            if(!petAnimationProfile(id,pet) || pet.idleFrames!=expected.idleFrames ||
+               pet.walkingFrames!=expected.walkingFrames || pet.sleepingFrames!=expected.sleepingFrames ||
+               pet.mirrorRightDirections) return 14;
+            const auto contains=[id](SpriteKind base,unsigned count) {
+                for(unsigned i=0;i<count;++i) {
+                    const auto* frame=findSpeciesSprite(id,SpriteKind(uint16_t(base)+i));
+                    if(!frame || !frame->width || !frame->height) return false;
+                    if(frame->shadowRadiusX && frameShadow(frame).offsetY!=frameGroundOffsetY(frame))
+                        return false;
+                }
+                return true;
+            };
+            for(auto kind:{SpriteKind::ICON_0,SpriteKind::FRONT,SpriteKind::BACK,SpriteKind::STATUS})
+                if(!contains(kind,1)) return 15;
+            if(!contains(pet.idleBase,8*pet.idleFrames) ||
+               !contains(pet.sleepingBase,pet.sleepingFrames)) return 16;
+            for(unsigned direction=0;direction<8;++direction) {
+                WalkingAnimation walk{};
+                if(!walkingAnimation(id,WalkDirection(direction),walk) ||
+                   walk.flipX || walk.frameCount!=expected.walkingFrames ||
+                   !contains(walk.base,walk.frameCount)) return 17;
+            }
+        }
+        if(!ExploreEcology::waterOnlySpecies(339) || !ExploreEcology::waterOnlySpecies(340) ||
+           ExploreEcology::waterOnlySpecies(341) || ExploreEcology::waterOnlySpecies(342)) return 18;
+        return 0;
+    }
     if(argc==4 && std::string(argv[3])=="extension") {
         const auto* s=findSpecies(999);PokemonSprites::WalkingAnimation walking{};PokemonSprites::PetAnimationProfile pet{};
         if(!s || speciesCount()!=94 || !findLearnset(999) || !PokemonSprites::walkingAnimation(999,PokemonSprites::WalkDirection::DOWN,walking) ||
@@ -74,6 +110,56 @@ template<class V> void contentFields(V& v,TestRecord& x) {v(x.number,x.text,x.en
         subprocess.run([str(binary),str(external),str(root)]+([mode] if mode else []),check=True)
     run()
     for p in static.glob('*.smondata'):assert p.read_bytes()==(external/p.name).read_bytes(),p.name
+    sprite_dir=root/'packs/dev/sprites';sprite_dir.mkdir(exist_ok=True)
+    for species_id in MANIFEST['speciesIds'] + MANIFEST.get('retimedSpeciesIds', []):
+        name=f'{species_id:03}.smonsp'
+        shutil.copyfile(ROOT/'data/packs/dev/sprites'/name,sprite_dir/name)
+    run('expansion-sprites')
+    large_sprite = sprite_dir / '381.smonsp'
+    original_large = large_sprite.read_bytes()
+    try:
+        version, = struct.unpack_from('<H', original_large, 4)
+        assert version in (4, 5)
+        if version == 4:
+            malformed = bytearray(original_large)
+            malformed[28:30] = b'\x00\x00'
+            large_sprite.write_bytes(malformed)
+            run('reject-large-sprite')
+        else:
+            import zlib
+            frame_count, = struct.unpack_from('<H', original_large, 8)
+            pose_count, = struct.unpack_from('<H', original_large, 30)
+            raw = zlib.decompress(original_large[32:], -15)
+            mutations = (
+                (2, '<H', pose_count),
+                (4, '<B', 0),
+                (6, '<B', 255),
+                (7, '<B', 2),
+                (8, '<h', -1),
+                (10, '<h', 32767),
+                (frame_count * 16, '<B', 0),
+                (frame_count * 16 + 4, '<I', 0xffffffff),
+                (frame_count * 16 + 12, '<I', 0xffffffff),
+            )
+            for offset, fmt, value in mutations:
+                corrupt = bytearray(raw)
+                struct.pack_into(fmt, corrupt, offset, value)
+                compressor = zlib.compressobj(level=6, wbits=-15)
+                encoded = compressor.compress(corrupt) + compressor.flush()
+                header = bytearray(original_large[:32])
+                struct.pack_into('<II', header, 20, len(encoded), zlib.crc32(corrupt))
+                large_sprite.write_bytes(header + encoded)
+                run('reject-large-sprite')
+            for count in (0, 257):
+                corrupt = bytearray(original_large)
+                struct.pack_into('<H', corrupt, 30, count)
+                large_sprite.write_bytes(corrupt)
+                run('reject-large-sprite')
+        for length in (28, 29, 31):
+            large_sprite.write_bytes(original_large[:length])
+            run('reject-large-sprite')
+    finally:
+        large_sprite.write_bytes(original_large)
     # Decoding equivalence alone misses dangling references present in both
     # sources. Run the actual startup validator on valid and broken catalogs.
     from validate_sdgoods_catalog import validate
@@ -87,17 +173,34 @@ template<class V> void contentFields(V& v,TestRecord& x) {v(x.number,x.text,x.en
         else:raise AssertionError('accepted removed held-item tutor move 168')
     finally:tutor.write_bytes(original_tutor)
     encounters=catalog/'30.smondata';original_encounters=encounters.read_bytes()
+    species_path=catalog/'1.smondata';original_species=species_path.read_bytes()
     try:
         duplicate=bytearray(original_encounters)
         duplicate[22:24]=duplicate[16:18]  # Two rows for the same species.
-        pending=bytearray(original_encounters)
-        struct.pack_into('<H',pending,16,265)
-        for rejected,label in ((duplicate,'duplicate'),(pending,'pending')):
+        unknown=bytearray(original_encounters)
+        struct.pack_into('<H',unknown,16,999)
+        for rejected,label in ((duplicate,'duplicate'),(unknown,'unknown')):
             encounters.write_bytes(rejected)
             try:validate(root)
             except subprocess.CalledProcessError:pass
             else:raise AssertionError(f'accepted {label} species in an encounter table')
-    finally:encounters.write_bytes(original_encounters)
+        encounters.write_bytes(original_encounters)
+        pending=bytearray(original_species)
+        offset=16
+        for _ in range(struct.unpack_from('<I',pending,8)[0]):
+            species_id,name_length=struct.unpack_from('<HH',pending,offset)
+            offset+=22+name_length
+            if species_id==265:
+                pending[offset-5] |= 0x80  # Pending bit in the evolution field.
+                break
+        else:raise AssertionError('missing Wurmple fixture')
+        species_path.write_bytes(pending)
+        try:validate(root)
+        except subprocess.CalledProcessError:pass
+        else:raise AssertionError('accepted pending Wurmple in an encounter table')
+    finally:
+        encounters.write_bytes(original_encounters)
+        species_path.write_bytes(original_species)
     payload=struct.pack('<IH',0x12345678,6)+b'hello\0'+b'\x01'
     good=struct.pack('<IHHII',0x44434d53,1,100,1,len(payload))+payload
     testfile=catalog/'100.smondata'
@@ -123,7 +226,7 @@ template<class V> void contentFields(V& v,TestRecord& x) {v(x.number,x.text,x.en
         append_alias(ident,size//n)
     path=catalog/'10.smondata';raw=bytearray(path.read_bytes());struct.pack_into('<H',raw,18,386);path.write_bytes(raw)
     sprite=bytearray((ROOT/'data/packs/dev/sprites/001.smonsp').read_bytes());struct.pack_into('<H',sprite,6,999)
-    sprite_dir=root/'packs/dev/sprites';sprite_dir.mkdir(exist_ok=True);(sprite_dir/'999.smonsp').write_bytes(sprite)
+    (sprite_dir/'999.smonsp').write_bytes(sprite)
     run('extension')
     print(f'PASS {len(list(static.glob("*.smondata")))} tables identical after external decode/re-encode; {len(bad)+1} malformed/short catalog cases rejected; resource-only new species and tile replacement passed')
 

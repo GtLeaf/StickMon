@@ -111,12 +111,12 @@ class MarketItemAssetsTests(unittest.TestCase):
     def test_all_market_icons_registered_at_end_and_installed_in_ui_pack(self):
         module = self.module()
         from generate_game_assets import MARKET_ITEMS, validate_kind_order, validate_committed_pack_kind_ids, indexed4_rle
-        self.assertEqual(len(MARKET_ITEMS), 17)
+        self.assertEqual(len(MARKET_ITEMS), 18)
         self.assertEqual(KIND_ORDER[1542:], [kind for kind, _ in MARKET_ITEMS])
         self.assertEqual(hashlib.sha256('\n'.join(KIND_ORDER[:1542]).encode()).hexdigest(),
                          '9a76ee93b62c40ce2179dffcfafad3cf0aaa61750514cad3d2ea8d1e0be12ecc')
         writer = module.read_writer(OUTPUTS['ui'])
-        self.assertEqual([frame['kind'] for frame in writer.frames[-17:]], [kind for kind, _ in MARKET_ITEMS])
+        self.assertEqual([frame['kind'] for frame in writer.frames[-18:]], [kind for kind, _ in MARKET_ITEMS])
         for kind, filename in MARKET_ITEMS:
             with Image.open(ROOT / 'origin_asset/icon/market/items' / filename) as image:
                 image = image.convert('RGBA')

@@ -1,3 +1,4 @@
+#include "game/StorageCapacity.h"
 #include "game/FriendshipService.h"
 
 #include "game/FriendshipPity.h"
@@ -20,7 +21,7 @@ OfferResult evaluateOffer(GameState& state,
     OfferResult result;
     const auto config = ExploreSpecial::configFor(special);
     result.eligible = (special == ExploreSpecial::Kind::NONE || config.allowsFriendship) &&
-                      state.storageCount < STORAGE_CAP;
+                      state.storageCount < StorageCapacity::capacity(state);
     if (!result.eligible) return result;
     if (forceOffer) {
         result.offered = true;
@@ -57,7 +58,7 @@ bool recordContact(GameState& state, const MonsterRuntime& monster,
                    uint8_t metArea, uint32_t metAt, uint8_t* contactSlot,
                    ExploreSpecial::Kind special) {
     const Species* species = findSpecies(monster.speciesId);
-    if (!species || state.storageCount >= STORAGE_CAP) return false;
+    if (!species || state.storageCount >= StorageCapacity::capacity(state)) return false;
 
     MonsterRuntime contact = monster;
     contact.hpMax = maxHpFor(*species, contact);

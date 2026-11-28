@@ -1,3 +1,5 @@
+#include <memory>
+#include <new>
 // SPDX-License-Identifier: Apache-2.0
 #include "RoomSession.h"
 
@@ -9,12 +11,13 @@
 namespace Sdgoods {
 bool RoomSession::begin(bool persist) {
     SaveManager verifier;
-    Game::GameState prior{};
+    std::unique_ptr<Game::GameState> prior(new (std::nothrow) Game::GameState{});
+    if(!prior)return false;
     MainSceneViewState view{};
     SaveManager::LoadStatus status = SaveManager::LoadStatus::NOT_FOUND;
     if (!verifier.begin()) return false;
     bool normalized=false;
-    verifier.load(prior, view, &normalized, &status);
+    verifier.load(*prior, view, &normalized, &status);
     // The shared-resource boot keeps the platform write gate closed until
     // resource and session validation finish. A readable migrated/normalized
     // save is valid in RAM; app_main commits it after opening that gate.
@@ -33,7 +36,8 @@ bool RoomSession::begin(bool persist) {
         return false;
     }
     // Seed HAL before begin() applies its default volume to the audio device.
-    if (status == SaveManager::LoadStatus::LOADED) Hal::ins().setAudioVolume(prior.settings.volume);
+    if (status == SaveManager::LoadStatus::LOADED) Hal::ins().setAudioVolume(prior->settings.volume);
+    prior.reset();
     auto& engine = GameEngine::ins();
     if (!engine.begin()) return false;
     ready_ = true;
